@@ -1,7 +1,7 @@
 {
   "name": "eccodes",
   "version": "2.47.0",
-  "port-version": 2,
+  "port-version": 3,
   "description": "ECMWF GRIB, BUFR and GTS decoding and encoding library and tools",
   "homepage": "https://github.com/ecmwf/eccodes",
   "license": "Apache-2.0",
@@ -12,11 +12,6 @@
       "host": true
     },
     "openjpeg",
-    {
-      "name": "python3",
-      "host": true,
-      "default-features": false
-    },
     {
       "name": "vcpkg-cmake",
       "host": true
