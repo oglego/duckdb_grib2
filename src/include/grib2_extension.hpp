@@ -4,7 +4,7 @@
 
 namespace duckdb {
 
-class ReadGrib2Extension : public Extension {
+class Grib2Extension : public Extension {
 public:
 	void Load(ExtensionLoader &db) override;
 	std::string Name() override;
