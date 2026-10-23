@@ -4,7 +4,7 @@ A DuckDB extension for querying GRIB2 weather data with SQL, powered by [ecCodes
 The end goal is to run queries directly against GRIB2 files in object storage, such as the
 [NOAA National Blend of Models (NBM)](https://registry.opendata.aws/noaa-nbm/) open dataset on S3.
 
-> **Status: early development.** Only a smoke-test function exists today. The table functions below are planned.
+> **Status: early development.** The extension builds in CI with ecCodes linked, but only a smoke-test function exists today. The table functions below are planned and not yet available. `INSTALL grib2 FROM community` will work only after a community-extensions submission.
 
 Built from the [DuckDB extension template](https://github.com/duckdb/extension-template).
 
@@ -38,11 +38,12 @@ SELECT grib2_eccodes_version();  -- version of the linked ecCodes library
 
 ## Roadmap
 
-1. Decode spike: read a message from an in-memory buffer, resolve the ecCodes definitions path
-2. `grib2_index()` (header scan, then `.idx` sidecar fast path)
-3. `read_grib2()` with `variable`, `level`, `step`, `bbox`
-4. Filter and projection pushdown
-5. Parallel scans, tests, community extension submission
+- [x] Extension scaffold with ecCodes linked via vcpkg, building in CI
+- [ ] Decode spike: read a message from an in-memory buffer; confirm ecCodes definitions are embedded and NBM packing templates decode
+- [ ] `grib2_index()` (header scan, then `.idx` sidecar fast path)
+- [ ] `read_grib2()` with `variable`, `level`, `step`, `bbox`
+- [ ] Filter and projection pushdown
+- [ ] Parallel scans, tests, community extension submission
 
 ## Building
 ### Managing dependencies
@@ -67,6 +68,28 @@ The main binaries that will be built are:
 - `duckdb` is the DuckDB shell with the extension code automatically loaded.
 - `unittest` is the test runner of DuckDB. Again, the extension is already linked into the binary.
 - `grib2.duckdb_extension` is the loadable binary as it would be distributed.
+
+### Build notes
+
+- **`python3` must be on your `PATH`** for the ecCodes build (see the overlay port below).
+- **ecCodes overlay port.** `vcpkg_ports/eccodes/` is a copy of the upstream vcpkg `eccodes` 2.47.0 port (from the vcpkg commit pinned by CI) with one change: the host `python3` dependency is removed. That dependency pulls in `python3[extensions]` and `libb2` on non-Windows platforms, and `libb2` needs `autoconf-archive` and `automake`, which the Linux CI images do not provide. The portfile still finds a system `python3` through `vcpkg_find_acquire_program`. When bumping the pinned vcpkg commit, refresh this copy from upstream and reapply the change.
+- **Overlay registration.** `vcpkg.json` lists `./vcpkg_ports` ahead of `./extension-ci-tools/vcpkg_ports` under `overlay-ports`.
+
+## Platform support
+
+The extension builds on the default CI platforms except the following, which are excluded in `.github/workflows/MainDistributionPipeline.yml` (`exclude_archs`):
+
+| Platform | Reason |
+|---|---|
+| `wasm_mvp`, `wasm_eh`, `wasm_threads` | ecCodes does not configure on the community `wasm32-emscripten` vcpkg triplet, and wasm is not a realistic target for this use case |
+| `windows_amd64_mingw` | ecCodes fails to configure on `x64-mingw-static`; to be investigated |
+
+These exclusions will need to be mirrored in the `description.yml` for the community-extensions submission.
+
+## CI notes
+
+- The code-quality job runs `format` only (`format_checks: 'format'`). The `tidy` check is disabled because it configures the project without vcpkg, so `find_package(eccodes)` cannot succeed there.
+- Run `make format-check` or `make format-fix` locally before pushing.
 
 ## Running the extension
 Start the shell with `./build/release/duckdb`, then:

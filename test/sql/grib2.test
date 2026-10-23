@@ -16,3 +16,22 @@ query I
 SELECT regexp_matches(grib2_eccodes_version(), '^\d+\.\d+\.\d+$');
 ----
 true
+
+# Decode spike: decode one GRIB2 message (complex packing with spatial differencing)
+# from an in-memory blob. This confirms ecCodes definitions and the packing codec work.
+query I
+SELECT grib2_message_info(content) FROM read_blob('test/data/sample.grib2');
+----
+edition=2;shortName=t;typeOfLevel=surface;level=0;gridType=regular_ll;Ni=16;Nj=31;numberOfPoints=496;packingType=grid_complex_spatial_differencing;values=496;min=250.000;max=299.500
+
+# Garbage input is rejected cleanly
+statement error
+SELECT grib2_message_info('not a grib message'::BLOB);
+----
+not a valid GRIB message
+
+# NULL in, NULL out
+query I
+SELECT grib2_message_info(NULL::BLOB) IS NULL;
+----
+true
