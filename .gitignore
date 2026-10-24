@@ -6,3 +6,6 @@ duckdb_unittest_tempdir/
 testext
 test/python/__pycache__/
 .Rhistory
+
+# Whole NBM files used for exploration; commit only single extracted messages (scripts/extract_message.py)
+fixtures/nbm/
