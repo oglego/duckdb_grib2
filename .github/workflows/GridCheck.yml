@@ -1,0 +1,20 @@
+#
+# Builds and runs the standalone grid geometry check (src/include/grib2_grid.hpp). It needs only a C++ compiler:
+# the reference data it compares against is committed in test/data/grid_reference.txt.
+#
+name: Grid Geometry Check
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  grid-check:
+    name: Grid geometry check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: g++ -std=c++17 -O2 -Wall -Wextra -I src/include test/cpp/grid_check.cpp -o grid_check
+      - name: Run
+        run: ./grid_check

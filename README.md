@@ -10,6 +10,9 @@ Built from the [DuckDB extension template](https://github.com/duckdb/extension-t
 
 ## Planned API
 
+Spatial selection comes first: most users want a few places, not a whole domain. See [docs/DESIGN.md](docs/DESIGN.md)
+for the reasoning and measurements.
+
 ```sql
 INSTALL grib2 FROM community;
 LOAD grib2;
@@ -17,45 +20,56 @@ LOAD grib2;
 -- Catalog of messages in one or more files (one row per GRIB message)
 SELECT * FROM grib2_index('s3://noaa-nbm-grib2-pds/blend.20260101/00/core/blend.t00z.core.f001.co.grib2');
 
--- Decoded grid values, with pruning by variable / level / step / bounding box
+-- Nearest grid cell to one or more points, for every matching message
+SELECT valid_time, query_lat, query_lon, lat, lon, distance_km, value
+FROM read_grib2('s3://noaa-nbm-grib2-pds/blend.20260101/00/core/*.grib2',
+                search := 'TMP:2 m above ground',
+                points := [{'lat': 37.21, 'lon': -93.29}]);
+
+-- Every cell inside a box (lon_min, lat_min, lon_max, lat_max)
 SELECT valid_time, lat, lon, value
-FROM read_grib2(
-    's3://noaa-nbm-grib2-pds/blend.20260101/00/core/*.grib2',
-    variable := 'TMP',
-    level := '2 m above ground',
-    bbox := [-95.0, 36.0, -92.0, 38.0]
-);
+FROM read_grib2('s3://noaa-nbm-grib2-pds/blend.20260101/00/core/blend.t00z.core.f001.co.grib2',
+                search := 'TMP:2 m above ground',
+                bbox := [-95.0, 36.0, -92.0, 38.0]);
 ```
 
 These signatures are a design sketch and may change.
 
 ## Available today
 
-Two functions exist, both temporary scaffolding while the real table functions are built:
+Three functions exist. The last two are temporary scaffolding while the real table functions are built:
 
 ```sql
 SELECT grib2_eccodes_version();  -- version of the linked ecCodes library
 
--- Decode the first GRIB message in a blob and describe it (decode spike)
+-- Decode the first GRIB message in a blob and describe it
 SELECT grib2_message_info(content) FROM read_blob('fixtures/nbm_msg.grib2');
+
+-- Value at the grid cell nearest a point (NULL outside the grid)
+SELECT grib2_point_value(content, 37.2090, -93.2923) FROM read_blob('fixtures/nbm_msg.grib2');  -- 291.5
 ```
 
-For the NBM CONUS 2 m temperature message in `fixtures/`, the second query returns:
+For the NBM CONUS 2 m temperature message in `fixtures/`, `grib2_message_info` returns:
 
 ```
-edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;values=3744965;min=262.100;max=307.700
+edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;alternativeRowScanning=1;values=3744965;min=262.100;max=307.700
 ```
 
-What this established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so output shape and pruning matter a lot for `read_grib2`.
+What this established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so spatial selection matters a lot. `grib2_point_value` currently supports Lambert conformal grids only, and decodes the whole message on every call, so it is for tests and spot checks.
+
+**A trap worth knowing about:** this grid has `alternativeRowScanning = 1`, so ecCodes returns `values` with every other row stored east to west while latitudes and longitudes are in canonical order. Pairing them directly mirrors half the rows. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Roadmap
 
 - [x] Extension scaffold with ecCodes linked via vcpkg, building in CI
-- [x] Decode spike: decode a real NBM message from an in-memory buffer (definitions available, complex spatial differencing works)
-- [ ] `grib2_index()` (header scan, then `.idx` sidecar fast path); use it to survey which packing templates NBM files actually contain
-- [ ] `read_grib2()` with `variable`, `level`, `step`, `bbox`
+- [x] Decode spike: decode a real NBM message from an in-memory buffer
+- [x] Lambert grid geometry (projection, nearest cell, lat/lon box, value ordering), tested against ecCodes
+- [x] Point extraction from a message inside the extension (`grib2_point_value`)
+- [ ] Survey the other NBM regions' grids (Alaska, Hawaii, Puerto Rico, Guam) for projections and scanning modes
+- [ ] `grib2_index()` (`.idx` fast path, optional header details); use it to survey packing templates across NBM files
+- [ ] `read_grib2()` with `search`, `points` and `bbox`
 - [ ] Filter and projection pushdown
-- [ ] Parallel scans, tests, community extension submission
+- [ ] Parallel scans, S3 reads, community extension submission
 
 ## Building
 ### Managing dependencies
@@ -89,7 +103,7 @@ The main binaries that will be built are:
 
 ## Platform support
 
-The extension builds on the default CI platforms except the following, which are excluded in `.github/workflows/MainDistributionPipeline.yml` (`exclude_archs`):
+The extension builds on the default CI platforms, including Windows with MSVC (`windows_amd64`). These are excluded in `.github/workflows/MainDistributionPipeline.yml` (`exclude_archs`):
 
 | Platform | Reason |
 |---|---|
@@ -101,6 +115,7 @@ These exclusions will need to be mirrored in the `description.yml` for the commu
 ## CI notes
 
 - The code-quality job runs `format` only (`format_checks: 'format'`). The `tidy` check is disabled because it configures the project without vcpkg, so `find_package(eccodes)` cannot succeed there.
+- A separate workflow (`.github/workflows/GridCheck.yml`) builds and runs the standalone grid geometry check on every push.
 - Run `make format-check` or `make format-fix` locally before pushing.
 
 ## Running the extension
@@ -130,6 +145,11 @@ make test
 ./build/release/test/unittest "test/*"
 ```
 Tests read their data files relative to the repository root, so run them from there. Test data is described in `fixtures/README.md` and `test/data/`.
+
+The grid geometry has its own standalone check (no DuckDB or ecCodes needed), also run in CI:
+```sh
+g++ -std=c++17 -O2 -I src/include test/cpp/grid_check.cpp -o /tmp/grid_check && /tmp/grid_check
+```
 
 ## Installing
 

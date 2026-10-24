@@ -22,7 +22,7 @@ true
 query I
 SELECT grib2_message_info(content) FROM read_blob('test/data/sample.grib2');
 ----
-edition=2;shortName=t;typeOfLevel=surface;level=0;gridType=regular_ll;Ni=16;Nj=31;numberOfPoints=496;packingType=grid_complex_spatial_differencing;values=496;min=250.000;max=299.500
+edition=2;shortName=t;typeOfLevel=surface;level=0;gridType=regular_ll;Ni=16;Nj=31;numberOfPoints=496;packingType=grid_complex_spatial_differencing;alternativeRowScanning=0;values=496;min=250.000;max=299.500
 
 # Garbage input is rejected cleanly
 statement error
@@ -40,4 +40,51 @@ true
 query I
 SELECT grib2_message_info(content) FROM read_blob('fixtures/nbm_msg.grib2');
 ----
-edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;values=3744965;min=262.100;max=307.700
+edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;alternativeRowScanning=1;values=3744965;min=262.100;max=307.700
+
+# Point extraction on the real NBM message. Expected values come from ecCodes' own nearest-point lookup.
+# This grid stores every other row east to west (alternativeRowScanning = 1), so rows are mirrored in the raw
+# "values" array. Springfield, MO sits on an odd row: the raw array would give 292.9, the correct value is 291.5.
+query I
+SELECT round(grib2_point_value(content, 37.2090, -93.2923), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+291.5
+
+query I
+SELECT round(grib2_point_value(content, 39.77, -116.85), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+281.5
+
+query I
+SELECT round(grib2_point_value(content, 44.40, -97.14), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+290.9
+
+# An even row, where stored order and canonical order agree
+query I
+SELECT round(grib2_point_value(content, 31.24, -93.88), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+292.7
+
+# Longitudes may use either convention
+query I
+SELECT round(grib2_point_value(content, 37.2090, 266.7077), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+291.5
+
+# Points outside the grid return NULL
+query I
+SELECT grib2_point_value(content, 10.0, -100.0) IS NULL FROM read_blob('fixtures/nbm_msg.grib2');
+----
+true
+
+# Grids other than Lambert are rejected clearly for now
+statement error
+SELECT grib2_point_value(content, 0.0, 0.0) FROM read_blob('test/data/sample.grib2');
+----
+is not supported yet
+
+statement error
+SELECT grib2_point_value('not a grib message'::BLOB, 0.0, 0.0);
+----
+not a valid GRIB message
