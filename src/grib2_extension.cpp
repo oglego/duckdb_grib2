@@ -88,8 +88,8 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 	}
 
 	std::string out;
-	for (const char *key : {"edition", "shortName", "typeOfLevel", "level", "gridType", "Ni", "Nj", "numberOfPoints",
-	                        "packingType"}) {
+	for (const char *key :
+	     {"edition", "shortName", "typeOfLevel", "level", "gridType", "Ni", "Nj", "numberOfPoints", "packingType"}) {
 		out += key;
 		out += "=";
 		out += Grib2KeyAsString(handle.get(), key);

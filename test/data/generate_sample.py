@@ -5,6 +5,7 @@ using complex packing with spatial differencing, the template family used by man
 
 Requires: pip install eccodes ecmwflibs
 """
+
 import eccodes as ec
 
 handle = ec.codes_grib_new_from_samples("regular_ll_sfc_grib2")
