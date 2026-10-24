@@ -35,3 +35,9 @@ query I
 SELECT grib2_message_info(NULL::BLOB) IS NULL;
 ----
 true
+
+# Real NOAA NBM message (CONUS 2 m temperature): Lambert grid, ~3.7M points, complex spatial differencing
+query I
+SELECT grib2_message_info(content) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;values=3744965;min=262.100;max=307.700

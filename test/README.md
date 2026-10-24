@@ -9,3 +9,17 @@ or
 ```bash
 make test_debug
 ```
+
+## Test data
+
+- `test/data/sample.grib2`: a 277-byte synthetic GRIB2 message (16 x 31 grid, complex packing with spatial differencing). Regenerate it with `test/data/generate_sample.py` (needs `pip install eccodes ecmwflibs`).
+- `fixtures/nbm_msg.grib2`: a real NBM CONUS message. See `fixtures/README.md` for its provenance.
+
+Tests use paths relative to the repository root, so run them from there.
+
+## Running tests
+
+`make test` needs Python 3.10 or newer (it calls DuckDB's `run_tests.py`). Otherwise run the binary directly:
+```bash
+./build/release/test/unittest "test/*"
+```
