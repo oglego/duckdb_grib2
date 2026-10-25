@@ -147,3 +147,101 @@ query I
 SELECT grib2_point_value(content, 40.0, -100.0) IS NULL FROM read_blob('fixtures/nbm_hi_msg.grib2');
 ----
 true
+
+# grib2_index with the .idx sidecar. test/data/multi.grib2.idx is a synthetic inventory for four messages on three grids.
+query IIITTTT
+SELECT message_number, byte_offset, byte_length, variable, level, forecast, strftime(reference_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/multi.grib2') ORDER BY message_number;
+----
+1	0	35188	CAPE	surface	1 hour fcst	2026-10-23 00:00
+2	35188	27859	APTMP	2 m above ground	1 hour fcst	2026-10-23 00:00
+3	63047	100044	APTMP	2 m above ground	1 hour fcst	2026-10-23 00:00
+4	163091	277	T	surface	anl	2026-01-01 00:00
+
+query ITIT
+SELECT message_number, inventory, step_hours, qualifier FROM grib2_index('test/data/multi.grib2') ORDER BY message_number;
+----
+1	CAPE:surface:1 hour fcst	1	(empty)
+2	APTMP:2 m above ground:1 hour fcst	1	(empty)
+3	APTMP:2 m above ground:1 hour fcst	1	(empty)
+4	T:surface:anl	0	(empty)
+
+# The inventory column is meant for Herbie-style searching
+query I
+SELECT message_number FROM grib2_index('test/data/multi.grib2') WHERE inventory LIKE 'APTMP:2 m above ground:%' ORDER BY message_number;
+----
+2
+3
+
+# Without details the sidecar is trusted: no section or ecCodes columns
+query III
+SELECT count(*), count(discipline), count(short_name) FROM grib2_index('test/data/multi.grib2');
+----
+4	0	0
+
+# idx := false hops through the file using the length in each indicator section. There are no names, but the
+# section headers give the parameter numbers, grid template and packing, and the reference time.
+query IIIIIIIIITT
+SELECT message_number, byte_offset, byte_length, variable IS NULL, discipline, parameter_category, parameter_number, grid_template, packing_template, packing_type, strftime(reference_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/multi.grib2', idx := false) ORDER BY message_number;
+----
+1	0	35188	true	0	7	6	10	3	grid_complex_spatial_differencing	2026-10-23 00:00
+2	35188	27859	true	0	0	21	10	3	grid_complex_spatial_differencing	2026-10-23 00:00
+3	63047	100044	true	0	0	21	10	3	grid_complex_spatial_differencing	2026-10-23 00:00
+4	163091	277	true	0	0	0	0	3	grid_complex_spatial_differencing	2026-01-01 00:00
+
+# details := true asks ecCodes for names, level and grid details from a short prefix of each message
+query ITTRTIIIT
+SELECT message_number, short_name, type_of_level, level_value, grid_type, ni, nj, alternative_row_scanning, packing_type FROM grib2_index('test/data/multi.grib2', details := true) ORDER BY message_number;
+----
+1	cape	surface	0.000	mercator	193	193	true	grid_complex_spatial_differencing
+2	aptmp	heightAboveGround	2.000	mercator	339	225	true	grid_complex_spatial_differencing
+3	aptmp	heightAboveGround	2.000	mercator	625	561	true	grid_complex_spatial_differencing
+4	t	surface	0.000	regular_ll	16	31	false	grid_complex_spatial_differencing
+
+# Both together, and a single real NBM message with no sidecar
+query IIIIIITT
+SELECT message_number, byte_offset, byte_length, variable IS NULL, grid_template, packing_template, short_name, grid_type FROM grib2_index('fixtures/nbm_msg.grib2', details := true);
+----
+1	0	2099312	true	30	3	2t	lambert
+
+query TTIII
+SELECT short_name, grid_type, ni, nj, grid_template FROM grib2_index('fixtures/nbm_ak_msg.grib2', details := true);
+----
+aptmp	polar_stereographic	1649	1105	20
+
+# Globs expand to several files, in path order
+query II
+SELECT count(*), count(DISTINCT file_path) FROM grib2_index('fixtures/nbm_*_msg.grib2');
+----
+4	4
+
+query TI
+SELECT file_path, message_number FROM grib2_index('fixtures/nbm_*_msg.grib2') ORDER BY file_path;
+----
+fixtures/nbm_ak_msg.grib2	1
+fixtures/nbm_gu_msg.grib2	1
+fixtures/nbm_hi_msg.grib2	1
+fixtures/nbm_pr_msg.grib2	1
+
+# Errors
+statement error
+SELECT * FROM grib2_index('test/data/no_such_file.grib2');
+----
+No files found
+
+
+statement error
+SELECT * FROM grib2_index('test/data/multi.grib2.idx', idx := false);
+----
+missing the GRIB marker
+
+
+# An .idx whose offsets do not match the file is caught instead of silently giving wrong offsets
+statement error
+SELECT * FROM grib2_index('test/data/stale.grib2');
+----
+belong to this file
+
+query I
+SELECT count(*) FROM grib2_index('test/data/stale.grib2', idx := false);
+----
+2

@@ -146,24 +146,40 @@ regex implementation (154 messages, every column), section headers of all fixtur
 from growing prefixes, as a ranged reader would), and `test/data/multi.grib2` where sidecar offsets must agree with
 the message boundaries found by hopping through the indicator sections.
 
-Planned columns:
+Implemented as `grib2_index(path, idx := true, details := false)` in `src/grib2_index_function.cpp`. `path` may be a glob.
+Rows come from the first of these that applies:
+
+1. **The `.idx` sidecar** (`<path>.idx`, when it exists and `idx` is true): one small read. The first message is checked
+   against the sidecar (every message with `details`), so an `.idx` that does not belong to the file gives an error
+   instead of wrong offsets.
+2. **Header hopping** (no sidecar, or `idx := false`): reads a short prefix of each message, using the length in the
+   indicator section to find the next one. No names, but the parameter numbers, grid and packing templates and
+   reference time come from the section headers.
+3. **`details := true`** additionally gives ecCodes' names, level and grid details, from the same short prefix (192 bytes
+   for every fixture here) through its partial-message API.
 
 | Column | Source |
 |---|---|
-| `message_number`, `byte_offset`, `byte_length` | `.idx`, or header hopping when there is no `.idx` |
+| `file_path`, `message_number`, `byte_offset`, `byte_length` | `.idx`, or header hopping |
 | `reference_time` | `.idx` `d=` field, or section 1 |
 | `variable`, `level`, `forecast`, `qualifier`, `inventory` | `.idx` text (`inventory` is `variable:level:forecast[:qualifier]`, for searching) |
-| `step_hours`, `percentile`, `threshold_lower`, `threshold_upper` | parsed from the text |
-| with `details := true`: `short_name`, `discipline`, `category`, `number`, `grid_type`, `ni`, `nj`, `packing_template`, ... | ecCodes partial handle plus the section parser |
+| `step_hours`, `percentile`, `threshold_lower`, `threshold_upper` | parsed from the `.idx` text |
+| `discipline`, `parameter_category`, `parameter_number`, `grid_template`, `packing_template`, `packing_type` | section headers (hopping or `details`) |
+| `short_name`, `type_of_level`, `level_value`, `grid_type`, `ni`, `nj`, `alternative_row_scanning` | ecCodes (`details := true`) |
 
-Default mode reads only the `.idx` (one small request). `details := true` range-reads a small prefix of each message.
+Columns that do not apply to a mode are NULL. `packing_type` uses ecCodes' names; each is checked against ecCodes in
+`test/cpp/idx_check.cpp` (nine gridded templates, including JPEG 2000 and CCSDS), and unknown templates show as
+`template N`. All reads go through DuckDB's file system, so `s3://` and `https://` should work once `httpfs` is loaded.
+That has not been tried yet; the tests use local files only.
+
+SQL tests in `test/sql/grib2.test` cover the sidecar, hopping, details, globs, and the error cases (missing file, not a
+GRIB file, and a stale `.idx`, using `test/data/stale.grib2`).
 
 ## Next steps
 
-1. The `grib2_index()` table function on local files: `.idx` sidecar by default, header hopping when there is none,
-   and `details := true`. Test against `test/data/multi.grib2` and its synthetic `.idx`.
+1. Try `grib2_index()` against S3 (NBM and the HRRR example), and use it to survey packing templates across real files.
 2. `read_grib2()` with `points` and `bbox` on a single local file, selecting messages by number or `search`.
-3. S3 and multi-file reads through DuckDB's file system, then parallel scans and pushdown.
+3. S3 and multi-file reads for `read_grib2`, then parallel scans and pushdown.
 
 ## Other sources to try later
 

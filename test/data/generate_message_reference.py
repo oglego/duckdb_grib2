@@ -7,6 +7,9 @@ Writes:
   test/data/multi.grib2.idx         SYNTHETIC wgrib2-style inventory for multi.grib2, built from ecCodes keys. It is a
                                     test input for the sidecar code path, not output of wgrib2.
   test/data/sections_reference.tsv  section-header facts for every fixture message, read with ecCodes
+  test/data/packing_templates.tsv   data representation template number -> ecCodes packingType, from encoding samples
+  test/data/stale.grib2(.idx)       two copies of sample.grib2 with an .idx whose offsets do not match the file, for the
+                                    "does this .idx belong to the file?" check
 
 Requires: pip install eccodes ecmwflibs
 Run from the repository root.
@@ -118,7 +121,7 @@ def write_multi():
 def write_sections():
     with open("test/data/sections_reference.tsv", "w") as out:
         out.write(
-            "# file\tdiscipline\tlength\tyear\tmonth\tday\thour\tminute\tgrid_template\tgrid_points\tproduct_template\tcategory\tnumber\tdata_template\tdata_points\n"
+            "# file\tdiscipline\tlength\tyear\tmonth\tday\thour\tminute\tgrid_template\tgrid_points\tproduct_template\tcategory\tnumber\tdata_template\tdata_points\tpacking_type\n"
         )
         for path in SECTION_FILES:
             data = open(path, "rb").read()
@@ -144,6 +147,7 @@ def write_sections():
                         g("parameterNumber"),
                         g("dataRepresentationTemplateNumber"),
                         g("numberOfValues"),
+                        g("packingType"),
                     ]
                 )
                 + "\n"
@@ -151,6 +155,42 @@ def write_sections():
     print("sections_reference.tsv:", len(SECTION_FILES), "files")
 
 
+def write_packing_templates():
+    names = [
+        "grid_simple",
+        "grid_complex",
+        "grid_complex_spatial_differencing",
+        "grid_ieee",
+        "grid_jpeg",
+        "grid_png",
+        "grid_ccsds",
+        "grid_run_length",
+        "grid_simple_log_preprocessing",
+    ]
+    rows = []
+    for name in names:
+        h = ec.codes_grib_new_from_samples("regular_ll_sfc_grib2")
+        ec.codes_set(h, "packingType", name)
+        template = ec.codes_get(h, "dataRepresentationTemplateNumber")
+        assert ec.codes_get(h, "packingType") == name
+        rows.append((template, name))
+    with open("test/data/packing_templates.tsv", "w") as out:
+        out.write("# data_template\tpacking_type\n")
+        for template, name in rows:
+            out.write("%d\t%s\n" % (template, name))
+    print("packing_templates.tsv:", len(rows), "templates")
+
+
+def write_stale():
+    sample = open("test/data/sample.grib2", "rb").read()
+    open("test/data/stale.grib2", "wb").write(sample + sample)
+    # The second message really starts at byte 277, not 100
+    open("test/data/stale.grib2.idx", "w").write("1:0:d=2026010100:T:surface:anl:\n2:100:d=2026010100:T:surface:anl:\n")
+    print("stale.grib2:", 2 * len(sample), "bytes, idx offsets deliberately wrong")
+
+
 write_nbm_expected()
 write_multi()
 write_sections()
+write_packing_templates()
+write_stale()

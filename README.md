@@ -37,10 +37,18 @@ These signatures are a design sketch and may change.
 
 ## Available today
 
-Three functions exist. The last two are temporary scaffolding while the real table functions are built:
+`grib2_index` is the first real table function. `grib2_message_info` and `grib2_point_value` are temporary scaffolding while `read_grib2` is built:
 
 ```sql
 SELECT grib2_eccodes_version();  -- version of the linked ecCodes library
+
+-- One row per GRIB message. Uses the wgrib2-style .idx next to the file when there is one
+SELECT message_number, byte_offset, byte_length, variable, level, forecast
+FROM grib2_index('test/data/multi.grib2');
+
+-- Without the sidecar (or with idx := false) it hops through the file; details := true adds ecCodes names and grid info
+SELECT message_number, short_name, grid_type, ni, nj, packing_type
+FROM grib2_index('fixtures/nbm_msg.grib2', details := true);
 
 -- Decode the first GRIB message in a blob and describe it
 SELECT grib2_message_info(content) FROM read_blob('fixtures/nbm_msg.grib2');
@@ -55,7 +63,9 @@ For the NBM CONUS 2 m temperature message in `fixtures/`, `grib2_message_info` r
 edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;alternativeRowScanning=1;values=3744965;min=262.100;max=307.700
 ```
 
-What this established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so spatial selection matters a lot. `grib2_point_value` supports every NBM grid (Lambert conformal for CONUS, polar stereographic for Alaska, Mercator for Hawaii, Puerto Rico and Guam), and decodes the whole message on every call, so it is for tests and spot checks.
+`grib2_index(path, idx := true, details := false)` accepts a glob and reads through DuckDB's file system, so `s3://` paths should work once `httpfs` is loaded (not tested yet). See [docs/DESIGN.md](docs/DESIGN.md) for the columns.
+
+What the decode spike established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so spatial selection matters a lot. `grib2_point_value` supports every NBM grid (Lambert conformal for CONUS, polar stereographic for Alaska, Mercator for Hawaii, Puerto Rico and Guam), and decodes the whole message on every call, so it is for tests and spot checks.
 
 **A trap worth knowing about:** this grid has `alternativeRowScanning = 1`, so ecCodes returns `values` with every other row stored east to west while latitudes and longitudes are in canonical order. Pairing them directly mirrors half the rows. See [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -67,7 +77,8 @@ What this established: ecCodes definitions are available at runtime, and NBM's p
 - [x] Point extraction from a message inside the extension (`grib2_point_value`)
 - [x] Survey the other NBM regions' grids (all use the same packing and stored-row order; three projections)
 - [x] `.idx` parser and GRIB2 section-header parser (standalone, tested against the real NBM inventory and ecCodes)
-- [ ] `grib2_index()` table function (`.idx` fast path, optional header details); use it to survey packing templates across NBM files
+- [x] `grib2_index()` table function on local files (`.idx` sidecar, header hopping, optional ecCodes details)
+- [ ] Try `grib2_index()` on S3 and survey packing templates across real NBM and HRRR files
 - [ ] `read_grib2()` with `search`, `points` and `bbox`
 - [ ] Filter and projection pushdown
 - [ ] Parallel scans, S3 reads, community extension submission

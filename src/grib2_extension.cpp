@@ -1,7 +1,9 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "grib2_extension.hpp"
+#include "grib2_codes.hpp"
 #include "grib2_grid.hpp"
+#include "grib2_index_function.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -43,77 +45,6 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 //     Supports the projections NBM uses: Lambert conformal, polar stereographic and Mercator.
 //     Decodes the whole message once per row, so it is only meant for tests and spot checks.
 // ---------------------------------------------------------------------------
-struct CodesHandleDeleter {
-	void operator()(codes_handle *handle) const {
-		if (handle) {
-			codes_handle_delete(handle);
-		}
-	}
-};
-using CodesHandlePtr = std::unique_ptr<codes_handle, CodesHandleDeleter>;
-
-static std::string Grib2KeyAsString(codes_handle *handle, const char *key) {
-	char buffer[256];
-	size_t length = sizeof(buffer);
-	if (codes_get_string(handle, key, buffer, &length) != CODES_SUCCESS) {
-		return "NA";
-	}
-	return std::string(buffer);
-}
-
-static long Grib2LongKey(codes_handle *handle, const char *key, const char *function) {
-	long value = 0;
-	if (codes_get_long(handle, key, &value) != CODES_SUCCESS) {
-		throw InvalidInputException(std::string(function) + ": GRIB key '" + key + "' is missing");
-	}
-	return value;
-}
-
-static long Grib2LongKeyOrDefault(codes_handle *handle, const char *key, long default_value) {
-	long value = 0;
-	if (codes_get_long(handle, key, &value) != CODES_SUCCESS) {
-		return default_value;
-	}
-	return value;
-}
-
-static double Grib2DoubleKey(codes_handle *handle, const char *key, const char *function) {
-	double value = 0;
-	if (codes_get_double(handle, key, &value) != CODES_SUCCESS) {
-		throw InvalidInputException(std::string(function) + ": GRIB key '" + key + "' is missing");
-	}
-	return value;
-}
-
-//! Create an ecCodes handle for the first message in a buffer.
-static CodesHandlePtr OpenGribMessage(const char *function, const char *data, idx_t size) {
-	// Cheap pre-check: a GRIB message starts with the 4-byte "GRIB" marker followed by the rest of the indicator
-	// section. This also keeps ecCodes from logging errors to stderr for obviously non-GRIB input.
-	if (size < 16 || std::memcmp(data, "GRIB", 4) != 0) {
-		throw InvalidInputException(std::string(function) + ": input is not a valid GRIB message");
-	}
-	// The _copy variant makes ecCodes own its buffer, so the DuckDB vector data can be released safely.
-	CodesHandlePtr handle(codes_handle_new_from_message_copy(nullptr, data, static_cast<size_t>(size)));
-	if (!handle) {
-		throw InvalidInputException(std::string(function) + ": input is not a valid GRIB message");
-	}
-	return handle;
-}
-
-//! Decode every value of the message in ecCodes' "values" order.
-static std::vector<double> DecodeGribValues(codes_handle *handle, const char *function) {
-	size_t value_count = 0;
-	if (codes_get_size(handle, "values", &value_count) != CODES_SUCCESS) {
-		throw InvalidInputException(std::string(function) + ": could not determine the number of values");
-	}
-	std::vector<double> values(value_count);
-	if (value_count > 0 && codes_get_double_array(handle, "values", values.data(), &value_count) != CODES_SUCCESS) {
-		throw InvalidInputException(std::string(function) + ": failed to decode values (unsupported packing?)");
-	}
-	values.resize(value_count);
-	return values;
-}
-
 static std::string DescribeGribMessage(const char *data, idx_t size) {
 	const char *function = "grib2_message_info";
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
@@ -238,6 +169,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	auto eccodes_version_function =
 	    ScalarFunction("grib2_eccodes_version", {}, LogicalType::VARCHAR, Grib2EccodesVersionScalarFun);
 	loader.RegisterFunction(eccodes_version_function);
+
+	RegisterGrib2IndexFunction(loader);
 
 	// Temporary scaffolding (see the comment above the implementations)
 	auto message_info_function =

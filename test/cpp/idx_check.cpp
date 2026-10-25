@@ -289,7 +289,18 @@ static void CheckSections() {
 		Check(std::to_string(summary.parameter_number) == row[12], path + ": parameter number");
 		Check(std::to_string(summary.data_template) == row[13], path + ": data representation template");
 		Check(std::to_string(summary.data_points) == row[14], path + ": data points");
+		const char *packing_name = DataTemplateName(summary.data_template);
+		Check(packing_name != nullptr && row[15] == packing_name, path + ": packing type name");
 	}
+
+	// Every packing template ecCodes can encode on a grid, including ones no fixture uses (JPEG 2000, CCSDS, ...)
+	const auto templates = ReadTsv("test/data/packing_templates.tsv");
+	Check(templates.size() >= 8, "packing template reference has entries");
+	for (const auto &row : templates) {
+		const char *name = DataTemplateName(std::atoi(row[0].c_str()));
+		Check(name != nullptr && row[1] == name, "packing name for template " + row[0] + " (" + row[1] + ")");
+	}
+	Check(DataTemplateName(9999) == nullptr, "unknown packing templates have no name");
 
 	// Input that is not a GRIB2 message
 	MessageSummary summary;

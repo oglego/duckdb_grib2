@@ -1,0 +1,10 @@
+# data_template	packing_type
+0	grid_simple
+2	grid_complex
+3	grid_complex_spatial_differencing
+4	grid_ieee
+40	grid_jpeg
+41	grid_png
+42	grid_ccsds
+200	grid_run_length
+61	grid_simple_log_preprocessing

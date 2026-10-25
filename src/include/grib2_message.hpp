@@ -53,6 +53,33 @@ enum class SectionParseResult {
 	INVALID
 };
 
+//! The ecCodes `packingType` name for a data representation template number, or nullptr when not known.
+//! Covers the gridded templates; test/data/packing_templates.tsv checks each against ecCodes.
+inline const char *DataTemplateName(int data_template) {
+	switch (data_template) {
+	case 0:
+		return "grid_simple";
+	case 2:
+		return "grid_complex";
+	case 3:
+		return "grid_complex_spatial_differencing";
+	case 4:
+		return "grid_ieee";
+	case 40:
+		return "grid_jpeg";
+	case 41:
+		return "grid_png";
+	case 42:
+		return "grid_ccsds";
+	case 61:
+		return "grid_simple_log_preprocessing";
+	case 200:
+		return "grid_run_length";
+	default:
+		return nullptr;
+	}
+}
+
 inline uint32_t ReadBigEndian16(const uint8_t *p) {
 	return (static_cast<uint32_t>(p[0]) << 8) | static_cast<uint32_t>(p[1]);
 }
