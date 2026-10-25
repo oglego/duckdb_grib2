@@ -119,10 +119,51 @@ Box edges in the reference are offset from cell centres by a fraction of a cell.
 whole row of centres (every cell in a Mercator row shares one latitude), would make membership depend on 1e-14
 rounding noise instead of on the code under test.
 
+## `grib2_index()` design
+
+Findings from the real NBM `.idx` (154 messages, `fixtures/blend.t00z.core.f001.co.grib2.idx`) that shape the index:
+
+- **Lines are irregular.** They have 7, 8 or 9 colon-separated fields, qualifiers can contain colons
+  (`prob <304.8:prob fcst 3/7`), and some lines have no trailing colon. Only the first six fields are split on colons;
+  the rest of the line is the qualifier.
+- **The idx text is not a unique key.** There are 148 distinct (variable, level, forecast, qualifier) combinations
+  among 154 messages; `CDCB`, `TCDC` and `CDCTOP` at `reserved` / `1 hour fcst` each appear three times. Message number
+  (and byte offset) is the only reliable identifier, so a `search` can match several messages unless ecCodes details
+  disambiguate them.
+- **Qualifier forms:** none (52), percentile `N% level` (58), probability (37: 23 `prob >N`, 9 `prob <N`, 4
+  `prob >=A <B`, and one bare `probability forecast`), `ens std dev` (6), and one other. The raw text is kept; the
+  parser also derives `percentile` and the probability bounds.
+- **Forecast text is not always `N hour fcst`.** It also has accumulations (`0-1 hour acc fcst`), maxima and a
+  `missing` form, so `step_hours` is only set for `anl` (0) and `N hour fcst`.
+- **The last message's length needs the file size**, because it has no following offset. Message sizes in this file range
+  from 179 KB to 3.8 MB.
+- Lines such as `1.2:...` (several fields in one message) are rejected with a clear error for now.
+
+`src/include/grib2_idx.hpp` implements the parser and `src/include/grib2_message.hpp` reads section headers, giving the
+packing template, parameter and grid template from a few hundred bytes of a message (ecCodes' partial handle cannot
+provide the packing template). Both are tested in `test/cpp/idx_check.cpp`: the real `.idx` against an independent
+regex implementation (154 messages, every column), section headers of all fixtures against ecCodes (including parsing
+from growing prefixes, as a ranged reader would), and `test/data/multi.grib2` where sidecar offsets must agree with
+the message boundaries found by hopping through the indicator sections.
+
+Planned columns:
+
+| Column | Source |
+|---|---|
+| `message_number`, `byte_offset`, `byte_length` | `.idx`, or header hopping when there is no `.idx` |
+| `reference_time` | `.idx` `d=` field, or section 1 |
+| `variable`, `level`, `forecast`, `qualifier`, `inventory` | `.idx` text (`inventory` is `variable:level:forecast[:qualifier]`, for searching) |
+| `step_hours`, `percentile`, `threshold_lower`, `threshold_upper` | parsed from the text |
+| with `details := true`: `short_name`, `discipline`, `category`, `number`, `grid_type`, `ni`, `nj`, `packing_template`, ... | ecCodes partial handle plus the section parser |
+
+Default mode reads only the `.idx` (one small request). `details := true` range-reads a small prefix of each message.
+
 ## Next steps
 
-1. `grib2_index()` with grid fingerprint, scanning flags, packing type and `.idx` qualifier columns.
-2. `read_grib2()` with `points` and `bbox`, then `.idx` and S3 range reads, then pushdown and parallel scans.
+1. The `grib2_index()` table function on local files: `.idx` sidecar by default, header hopping when there is none,
+   and `details := true`. Test against `test/data/multi.grib2` and its synthetic `.idx`.
+2. `read_grib2()` with `points` and `bbox` on a single local file, selecting messages by number or `search`.
+3. S3 and multi-file reads through DuckDB's file system, then parallel scans and pushdown.
 
 ## Other sources to try later
 

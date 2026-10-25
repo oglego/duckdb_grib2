@@ -1,0 +1,7 @@
+# file	discipline	length	year	month	day	hour	minute	grid_template	grid_points	product_template	category	number	data_template	data_points
+fixtures/nbm_msg.grib2	0	2099312	2026	10	23	0	0	30	3744965	0	0	0	3	3744965
+fixtures/nbm_ak_msg.grib2	0	1069936	2026	10	23	0	0	20	1822145	0	0	21	3	1822145
+fixtures/nbm_gu_msg.grib2	0	35188	2026	10	23	0	0	10	37249	0	7	6	3	37249
+fixtures/nbm_pr_msg.grib2	0	27859	2026	10	23	0	0	10	76275	0	0	21	3	76275
+fixtures/nbm_hi_msg.grib2	0	100044	2026	10	23	0	0	10	350625	0	0	21	3	350625
+test/data/sample.grib2	0	277	2026	1	1	0	0	0	496	0	0	0	3	496

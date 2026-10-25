@@ -1,20 +1,26 @@
 #
-# Builds and runs the standalone grid geometry check (src/include/grib2_grid.hpp). It needs only a C++ compiler:
-# the reference data it compares against is committed in test/data/grid_reference.txt.
+# Builds and runs the standalone C++ checks. They need only a C++ compiler: the reference data they compare against is
+# committed under test/data/.
+#   grid_check: src/include/grib2_grid.hpp (projections, nearest cell, boxes)
+#   idx_check:  src/include/grib2_idx.hpp and grib2_message.hpp (.idx parser, section headers)
 #
-name: Grid Geometry Check
+name: Standalone C++ Checks
 on:
   push:
   pull_request:
   workflow_dispatch:
 
 jobs:
-  grid-check:
-    name: Grid geometry check
+  standalone-checks:
+    name: Standalone C++ checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build
+      - name: Build grid check
         run: g++ -std=c++17 -O2 -Wall -Wextra -I src/include test/cpp/grid_check.cpp -o grid_check
-      - name: Run
+      - name: Run grid check
         run: ./grid_check
+      - name: Build idx check
+        run: g++ -std=c++17 -O2 -Wall -Wextra -I src/include test/cpp/idx_check.cpp -o idx_check
+      - name: Run idx check
+        run: ./idx_check

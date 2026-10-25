@@ -66,7 +66,8 @@ What this established: ecCodes definitions are available at runtime, and NBM's p
 - [x] Grid geometry for all NBM projections (Lambert, polar stereographic, Mercator): nearest cell, lat/lon box, value ordering, tested against ecCodes for every region
 - [x] Point extraction from a message inside the extension (`grib2_point_value`)
 - [x] Survey the other NBM regions' grids (all use the same packing and stored-row order; three projections)
-- [ ] `grib2_index()` (`.idx` fast path, optional header details); use it to survey packing templates across NBM files
+- [x] `.idx` parser and GRIB2 section-header parser (standalone, tested against the real NBM inventory and ecCodes)
+- [ ] `grib2_index()` table function (`.idx` fast path, optional header details); use it to survey packing templates across NBM files
 - [ ] `read_grib2()` with `search`, `points` and `bbox`
 - [ ] Filter and projection pushdown
 - [ ] Parallel scans, S3 reads, community extension submission
@@ -115,7 +116,7 @@ These exclusions will need to be mirrored in the `description.yml` for the commu
 ## CI notes
 
 - The code-quality job runs `format` only (`format_checks: 'format'`). The `tidy` check is disabled because it configures the project without vcpkg, so `find_package(eccodes)` cannot succeed there.
-- A separate workflow (`.github/workflows/GridCheck.yml`) builds and runs the standalone grid geometry check on every push.
+- A separate workflow (`.github/workflows/GridCheck.yml`) builds and runs the standalone C++ checks (grid geometry, `.idx` and section parsing) on every push.
 - Run `make format-check` or `make format-fix` locally before pushing.
 
 ## Running the extension
@@ -146,9 +147,10 @@ make test
 ```
 Tests read their data files relative to the repository root, so run them from there. Test data is described in `fixtures/README.md` and `test/data/`.
 
-The grid geometry has its own standalone check (no DuckDB or ecCodes needed), also run in CI:
+The grid geometry and the `.idx` and section parsers have their own standalone checks (no DuckDB or ecCodes needed), also run in CI:
 ```sh
 g++ -std=c++17 -O2 -I src/include test/cpp/grid_check.cpp -o /tmp/grid_check && /tmp/grid_check
+g++ -std=c++17 -O2 -I src/include test/cpp/idx_check.cpp -o /tmp/idx_check && /tmp/idx_check
 ```
 
 ## Installing
