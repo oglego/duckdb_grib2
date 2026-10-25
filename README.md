@@ -55,7 +55,7 @@ For the NBM CONUS 2 m temperature message in `fixtures/`, `grib2_message_info` r
 edition=2;shortName=2t;typeOfLevel=heightAboveGround;level=2;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex_spatial_differencing;alternativeRowScanning=1;values=3744965;min=262.100;max=307.700
 ```
 
-What this established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so spatial selection matters a lot. `grib2_point_value` currently supports Lambert conformal grids only, and decodes the whole message on every call, so it is for tests and spot checks.
+What this established: ecCodes definitions are available at runtime, and NBM's packing template (complex packing with spatial differencing) decodes with no extra codec libraries. A single CONUS message is about 3.7 million grid points, so spatial selection matters a lot. `grib2_point_value` supports every NBM grid (Lambert conformal for CONUS, polar stereographic for Alaska, Mercator for Hawaii, Puerto Rico and Guam), and decodes the whole message on every call, so it is for tests and spot checks.
 
 **A trap worth knowing about:** this grid has `alternativeRowScanning = 1`, so ecCodes returns `values` with every other row stored east to west while latitudes and longitudes are in canonical order. Pairing them directly mirrors half the rows. See [docs/DESIGN.md](docs/DESIGN.md).
 
@@ -63,9 +63,9 @@ What this established: ecCodes definitions are available at runtime, and NBM's p
 
 - [x] Extension scaffold with ecCodes linked via vcpkg, building in CI
 - [x] Decode spike: decode a real NBM message from an in-memory buffer
-- [x] Lambert grid geometry (projection, nearest cell, lat/lon box, value ordering), tested against ecCodes
+- [x] Grid geometry for all NBM projections (Lambert, polar stereographic, Mercator): nearest cell, lat/lon box, value ordering, tested against ecCodes for every region
 - [x] Point extraction from a message inside the extension (`grib2_point_value`)
-- [ ] Survey the other NBM regions' grids (Alaska, Hawaii, Puerto Rico, Guam) for projections and scanning modes
+- [x] Survey the other NBM regions' grids (all use the same packing and stored-row order; three projections)
 - [ ] `grib2_index()` (`.idx` fast path, optional header details); use it to survey packing templates across NBM files
 - [ ] `read_grib2()` with `search`, `points` and `bbox`
 - [ ] Filter and projection pushdown

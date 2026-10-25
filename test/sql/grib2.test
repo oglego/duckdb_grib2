@@ -88,3 +88,62 @@ statement error
 SELECT grib2_point_value('not a grib message'::BLOB, 0.0, 0.0);
 ----
 not a valid GRIB message
+
+# The other NBM regions use other projections but the same stored-row order. Expected values come from ecCodes'
+# nearest-point lookup. On odd rows the raw "values" array differs from the correct value (noted as raw below).
+
+# Alaska: polar stereographic (odd row; raw 273.3)
+query I
+SELECT round(grib2_point_value(content, 58.0874, -154.1681), 1) FROM read_blob('fixtures/nbm_ak_msg.grib2');
+----
+275.7
+
+# Alaska, even row, west of the antimeridian
+query I
+SELECT round(grib2_point_value(content, 63.8585, -170.2528), 1) FROM read_blob('fixtures/nbm_ak_msg.grib2');
+----
+272.3
+
+# Hawaii: Mercator (odd row; raw 298.7)
+query I
+SELECT round(grib2_point_value(content, 22.005, -154.4903), 1) FROM read_blob('fixtures/nbm_hi_msg.grib2');
+----
+298.9
+
+query I
+SELECT round(grib2_point_value(content, 18.0725, -158.4858), 1) FROM read_blob('fixtures/nbm_hi_msg.grib2');
+----
+299.7
+
+# Puerto Rico: Mercator (odd row; raw 307.7)
+query I
+SELECT round(grib2_point_value(content, 17.7425, -66.4248), 1) FROM read_blob('fixtures/nbm_pr_msg.grib2');
+----
+308.0
+
+query I
+SELECT round(grib2_point_value(content, 18.5269, -66.6641), 1) FROM read_blob('fixtures/nbm_pr_msg.grib2');
+----
+305.1
+
+# Guam: Mercator, CAPE (odd row; raw 1409.0)
+query I
+SELECT round(grib2_point_value(content, 13.818, 147.0361), 1) FROM read_blob('fixtures/nbm_gu_msg.grib2');
+----
+969.0
+
+query I
+SELECT round(grib2_point_value(content, 14.8148, 146.5576), 1) FROM read_blob('fixtures/nbm_gu_msg.grib2');
+----
+678.0
+
+# Outside each grid returns NULL
+query I
+SELECT grib2_point_value(content, 0.0, 0.0) IS NULL FROM read_blob('fixtures/nbm_ak_msg.grib2');
+----
+true
+
+query I
+SELECT grib2_point_value(content, 40.0, -100.0) IS NULL FROM read_blob('fixtures/nbm_hi_msg.grib2');
+----
+true

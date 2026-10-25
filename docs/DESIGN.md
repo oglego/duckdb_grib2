@@ -42,7 +42,7 @@ Parquet. Return query coordinates alongside the matched cell so results join bac
 | ecCodes' nearest-point search took about 2.3 s on first call (measured). | Do not use it per message. |
 | ecCodes returns longitudes in 0..360 (221 to 301 for CONUS). | Accept both conventions on input, return -180..180, handle boxes crossing the antimeridian. |
 | `alternativeRowScanning = 1` in this message. **`values` is in stored order (odd rows east to west) while latitudes and longitudes are canonical row-major.** | Pairing `values[k]` with `lat[k]` silently mirrors every other row. See below. |
-| Closed-form spherical Lambert math matches ecCodes lat/lon for all 3.7M cells to about 1e-13 degrees. | `src/include/grib2_grid.hpp` needs no coordinate arrays. |
+| Closed-form spherical Lambert, polar stereographic and Mercator math matches ecCodes lat/lon for every cell of every NBM region (CONUS, Alaska, Hawaii, Puerto Rico, Guam) to better than 1e-11 degrees. | `src/include/grib2_grid.hpp` needs no coordinate arrays. |
 | All messages in an NBM file share one grid. | Build grid structures once per distinct grid, keyed by a fingerprint stored in `grib2_index()`. |
 | In the `.idx`, many messages share a variable and level and differ by percentile, probability threshold or `ens std dev`. | `grib2_index()` needs a qualifier column and the raw `.idx` text, not just variable and level. |
 
@@ -67,20 +67,42 @@ must reject anything else.
 
 ## Grid math
 
-`src/include/grib2_grid.hpp` is dependency free (no DuckDB, no ecCodes) and provides:
+`src/include/grib2_grid.hpp` is dependency free (no DuckDB, no ecCodes). NBM publishes separate files per region and they
+do not share a projection (surveyed with `grib2_message_info`; all use the same packing and the same stored-row order):
 
-- `LambertGrid::Forward` / `Inverse`: lat/lon to fractional grid coordinates and back (spherical earth, as in NBM).
-- `LambertGrid::NearestCell`: rounded cell plus its eight neighbours, ranked by great-circle distance.
-- `LambertGrid::CellsInBox`: projects the box outline to get a grid window, then tests each cell exactly.
+| Region | Projection | Size |
+|---|---|---|
+| CONUS | Lambert conformal | 2345 x 1597 |
+| Alaska | north polar stereographic | 1649 x 1105 |
+| Hawaii, Puerto Rico, Guam | Mercator | 625 x 561, 339 x 225, 193 x 193 |
+
+All of them use a spherical earth (`shapeOfTheEarth = 1`, radius 6,371,200 m) and scanning mode 80
+(`iScansNegatively = 0`, `jScansPositively = 1`, alternating row direction).
+
+`ProjectedGrid` implements the logic once, in terms of a projection's `Project` and `Unproject`:
+
+- `Forward` / `Inverse`: lat/lon to fractional grid coordinates and back.
+- `NearestCell`: rounded cell plus its eight neighbours, ranked by great-circle distance.
+- `CellsInBox`: projects the box outline to get a grid window, then tests each cell exactly.
 - `RawValueIndex`: canonical cell to index into ecCodes' `values`.
 
-Not yet covered: the other projections used by NBM regions (Alaska, Hawaii, Puerto Rico, Guam). Check `gridType` for
-each with `grib2_index()` before assuming. ecCodes coordinate arrays, cached once per grid, are the fallback.
+`LambertGrid`, `PolarStereographicGrid` and `MercatorGrid` supply only the projection math. The extension builds the
+right one from the message's grid keys and rejects anything else (other grid types, ellipsoidal earths, south polar,
+other scanning modes) with a clear error.
+
+Two details found by checking against ecCodes:
+
+- **Mercator orientation is ignored.** ecCodes reports `orientationOfTheGridInDegrees` as 0, 200 and 295 for Guam,
+  Hawaii and Puerto Rico, but a plain Mercator with spacing true at `LaD` and the first grid point as origin reproduces
+  ecCodes' coordinates to about 1e-13 degrees without it.
+- **Polar stereographic** uses `orientationOfTheGridInDegrees` as the longitude pointing down the map, with `LaD` as
+  the true latitude (60 degrees for Alaska).
 
 ## Validating the grid code
 
 The reference data in `test/data/grid_reference.txt` is produced entirely by ecCodes (coordinate arrays, iterator and
-brute-force searches), never by the code under test. From the repository root:
+brute-force searches), never by the code under test. It has one section per region, built from the fixtures in
+`fixtures/`. From the repository root:
 
 ```sh
 pip install eccodes ecmwflibs numpy
@@ -88,13 +110,45 @@ python3 test/data/generate_grid_reference.py          # only needed to regenerat
 g++ -std=c++17 -O2 -I src/include test/cpp/grid_check.cpp -o /tmp/grid_check && /tmp/grid_check
 ```
 
-It checks 150 cells (inverse and forward projection, raw value index), 81 nearest-point queries (including points
-outside the grid) and 23 boxes (cell counts, including whole-world, antimeridian and outside-grid boxes).
-Measured result: maximum coordinate error 8.5e-14 degrees, maximum index error 3.2e-12 cells, 0 failures.
+Per region it checks 100 cells (inverse and forward projection, raw value index), 33 nearest-point queries (25 inside the
+grid, 8 outside) and 15 boxes (cell counts, including whole-world, antimeridian-style, far-away and whole-region boxes).
+Measured result across the five regions: maximum coordinate error 2e-12 degrees, maximum index error 2.3e-11 cells,
+0 failures. The generator also asserts the stored-row-order claim against ecCodes' geography iterator for each region.
+
+Box edges in the reference are offset from cell centres by a fraction of a cell. An edge exactly on a centre, or on a
+whole row of centres (every cell in a Mercator row shares one latitude), would make membership depend on 1e-14
+rounding noise instead of on the code under test.
 
 ## Next steps
 
 1. `grib2_index()` with grid fingerprint, scanning flags, packing type and `.idx` qualifier columns.
-2. Wire the grid code into the extension: load grid parameters from ecCodes keys, check scanning flags, apply
-   `RawValueIndex`, and add a SQL test comparing extracted values with the oracle.
-3. `read_grib2()` with `points` and `bbox`, then `.idx` and S3 range reads, then pushdown and parallel scans.
+2. `read_grib2()` with `points` and `bbox`, then `.idx` and S3 range reads, then pushdown and parallel scans.
+
+## Other sources to try later
+
+Not needed yet. NBM covers the first milestones, and these are checks to run once `grib2_index()` and `read_grib2()`
+exist.
+
+**HRRR** (Lambert conformal, 1799 x 1059, about 3 km) should work with the existing grid code. Example endpoint:
+
+- Index: <https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20140730/conus/hrrr.t18z.wrfnatf00.grib2.idx>
+- Data: the same URL without `.idx`
+
+Caveats about this particular example:
+
+- It is from 2014-07-30 18z, which is early HRRR. Packing and earth shape may differ from current files (an HRRR
+  dataset from that era reports a 6,367,470 m earth radius, shape 0; the extension accepts shapes 0, 1, 6 and 8).
+- `wrfnat` is the native-level product, so expect many messages. `wrfsfc` and `wrfprs` are the more common choices.
+- Its contents are unverified. The URL resolves, but it came back as binary and the `.idx` has not been inspected.
+- The bucket layout (`noaa-hrrr-bdp-pds`, `.idx` beside each file) is from this example, not yet confirmed by a listing.
+
+What to check when trying it:
+
+1. `.idx` line format versus NBM's (`n:offset:d=YYYYMMDDHH:VAR:level:fcst:`).
+2. `packingType` across messages. One third-party HRRR decoder describes templates 5.3 (complex with spatial
+   differencing) and 5.0 (simple); only 5.3 is proven here.
+3. `shapeOfTheEarth`, scanning flags and `alternativeRowScanning`.
+4. `grib2_point_value` against an ecCodes nearest-point lookup, as for the NBM fixtures.
+
+Grids not supported yet: regular lat/lon (for example GFS) is a trivial projection and cheap to add; Gaussian grids
+(for example ECMWF) are real work.

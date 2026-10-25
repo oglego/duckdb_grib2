@@ -40,6 +40,7 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 //   grib2_point_value(BLOB, lat, lon) -> DOUBLE
 //     Value at the grid cell nearest to a point. Exercises the full path used by read_grib2(): grid keys, scanning
 //     mode checks, nearest-cell lookup, value ordering and decoding. NULL when the point is outside the grid.
+//     Supports the projections NBM uses: Lambert conformal, polar stereographic and Mercator.
 //     Decodes the whole message once per row, so it is only meant for tests and spot checks.
 // ---------------------------------------------------------------------------
 struct CodesHandleDeleter {
@@ -138,43 +139,78 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 	return out;
 }
 
-static optional<double> PointValueFromMessage(const char *data, idx_t size, double lat, double lon) {
-	const char *function = "grib2_point_value";
-	CodesHandlePtr handle = OpenGribMessage(function, data, size);
-	codes_handle *h = handle.get();
+struct Grib2Grid {
+	std::unique_ptr<ProjectedGrid> grid;
+	//! Rows are stored in alternating directions, see RawValueIndex()
+	bool alternative_rows;
+};
 
+//! Build the grid described by a message's grid definition. Throws for grids that are not supported yet.
+static Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 	const std::string grid_type = Grib2KeyAsString(h, "gridType");
-	if (grid_type != "lambert") {
+	if (grid_type != "lambert" && grid_type != "mercator" && grid_type != "polar_stereographic") {
 		throw NotImplementedException(std::string(function) + ": grid type '" + grid_type +
-		                              "' is not supported yet (only lambert)");
+		                              "' is not supported yet (lambert, mercator and polar_stereographic are)");
+	}
+	// The grid code assumes a spherical earth with the radius ecCodes reports
+	const long shape_of_earth = Grib2LongKey(h, "shapeOfTheEarth", function);
+	if (shape_of_earth != 0 && shape_of_earth != 1 && shape_of_earth != 6 && shape_of_earth != 8) {
+		throw NotImplementedException(std::string(function) + ": shape of the earth " + std::to_string(shape_of_earth) +
+		                              " is not supported yet (spherical only)");
 	}
 	// RawValueIndex() assumes i increases east, j increases north and rows are stored consecutively
 	if (Grib2LongKey(h, "iScansNegatively", function) != 0 || Grib2LongKey(h, "jScansPositively", function) != 1 ||
 	    Grib2LongKey(h, "jPointsAreConsecutive", function) != 0) {
 		throw NotImplementedException(std::string(function) + ": this scanning mode is not supported yet");
 	}
-	const bool alternative_rows = Grib2LongKeyOrDefault(h, "alternativeRowScanning", 0) != 0;
 
 	const int64_t ni = Grib2LongKey(h, "Ni", function);
 	const int64_t nj = Grib2LongKey(h, "Nj", function);
-	const LambertGrid grid(ni, nj, Grib2DoubleKey(h, "latitudeOfFirstGridPointInDegrees", function),
-	                       Grib2DoubleKey(h, "longitudeOfFirstGridPointInDegrees", function),
-	                       Grib2DoubleKey(h, "LaDInDegrees", function), Grib2DoubleKey(h, "LoVInDegrees", function),
-	                       Grib2DoubleKey(h, "Latin1InDegrees", function),
-	                       Grib2DoubleKey(h, "Latin2InDegrees", function), Grib2DoubleKey(h, "DxInMetres", function),
-	                       Grib2DoubleKey(h, "DyInMetres", function), Grib2DoubleKey(h, "radius", function));
+	const double la1 = Grib2DoubleKey(h, "latitudeOfFirstGridPointInDegrees", function);
+	const double lo1 = Grib2DoubleKey(h, "longitudeOfFirstGridPointInDegrees", function);
+	const double lad = Grib2DoubleKey(h, "LaDInDegrees", function);
+	const double dx = Grib2DoubleKey(h, "DxInMetres", function);
+	const double dy = Grib2DoubleKey(h, "DyInMetres", function);
+	const double radius = Grib2DoubleKey(h, "radius", function);
 
+	Grib2Grid result;
+	result.alternative_rows = Grib2LongKeyOrDefault(h, "alternativeRowScanning", 0) != 0;
+	if (grid_type == "lambert") {
+		result.grid = std::make_unique<LambertGrid>(ni, nj, la1, lo1, lad, Grib2DoubleKey(h, "LoVInDegrees", function),
+		                                            Grib2DoubleKey(h, "Latin1InDegrees", function),
+		                                            Grib2DoubleKey(h, "Latin2InDegrees", function), dx, dy, radius);
+	} else if (grid_type == "polar_stereographic") {
+		if (Grib2LongKey(h, "southPoleOnProjectionPlane", function) != 0) {
+			throw NotImplementedException(std::string(function) + ": south polar stereographic is not supported yet");
+		}
+		result.grid = std::make_unique<PolarStereographicGrid>(
+		    ni, nj, la1, lo1, lad, Grib2DoubleKey(h, "orientationOfTheGridInDegrees", function), dx, dy, radius);
+	} else {
+		result.grid = std::make_unique<MercatorGrid>(ni, nj, la1, lo1, lad, dx, dy, radius);
+	}
+	return result;
+}
+
+static optional<double> PointValueFromMessage(const char *data, idx_t size, double lat, double lon) {
+	const char *function = "grib2_point_value";
+	CodesHandlePtr handle = OpenGribMessage(function, data, size);
+	codes_handle *h = handle.get();
+
+	const Grib2Grid grib_grid = MakeGrid(h, function);
+	const ProjectedGrid &grid = *grib_grid.grid;
 	GridCell cell;
 	if (!grid.NearestCell(lat, lon, cell)) {
 		return optional<double>();
 	}
 
 	const std::vector<double> values = DecodeGribValues(h, function);
-	if (static_cast<int64_t>(values.size()) != ni * nj) {
+	const int64_t cell_count = grid.Ni() * grid.Nj();
+	if (static_cast<int64_t>(values.size()) != cell_count) {
 		throw InvalidInputException(std::string(function) + ": the message has " + std::to_string(values.size()) +
-		                            " values but its grid has " + std::to_string(ni * nj) + " cells");
+		                            " values but its grid has " + std::to_string(cell_count) + " cells");
 	}
-	const double value = values[static_cast<size_t>(RawValueIndex(ni, cell.i, cell.j, alternative_rows))];
+	const double value =
+	    values[static_cast<size_t>(RawValueIndex(grid.Ni(), cell.i, cell.j, grib_grid.alternative_rows))];
 
 	// Cells masked out by a bitmap come back as the message's missing value
 	if (Grib2LongKeyOrDefault(h, "bitmapPresent", 0) != 0 && value == Grib2DoubleKey(h, "missingValue", function)) {
