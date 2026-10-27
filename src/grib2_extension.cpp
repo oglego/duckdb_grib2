@@ -50,13 +50,26 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
 	const std::vector<double> values = DecodeGribValues(handle.get(), function);
 
-	std::string min_str = "NA";
-	std::string max_str = "NA";
-	if (!values.empty()) {
-		const auto minmax = std::minmax_element(values.begin(), values.end());
-		min_str = StringUtil::Format("%.3f", *minmax.first);
-		max_str = StringUtil::Format("%.3f", *minmax.second);
+	// Cells masked out by a bitmap come back as the missing value; leave them out of min and max
+	const bool has_bitmap = Grib2LongKeyOrDefault(handle.get(), "bitmapPresent", 0) != 0;
+	const double missing_value = Grib2OptionalDouble(handle.get(), "missingValue").value_or(9999.0);
+	bool any_value = false;
+	double min_value = 0;
+	double max_value = 0;
+	for (const double value : values) {
+		if (has_bitmap && value == missing_value) {
+			continue;
+		}
+		if (!any_value) {
+			min_value = max_value = value;
+			any_value = true;
+		} else {
+			min_value = std::min(min_value, value);
+			max_value = std::max(max_value, value);
+		}
 	}
+	const std::string min_str = any_value ? StringUtil::Format("%.3f", min_value) : "NA";
+	const std::string max_str = any_value ? StringUtil::Format("%.3f", max_value) : "NA";
 
 	std::string out;
 	for (const char *key : {"edition", "shortName", "typeOfLevel", "level", "gridType", "Ni", "Nj", "numberOfPoints",

@@ -51,3 +51,31 @@ python3 scripts/extract_message.py fixtures/nbm/blend.t00z.core.f001.ak.grib2 fi
 ```
 
 `fixtures/nbm/` is git-ignored for the whole files.
+
+## Template 5.2 message
+
+`nbm_complex_msg.grib2` (589,028 bytes) is message 52 of the same CONUS file: `PWTHER:surface - reserved:1 hour fcst`,
+bytes 55669237 through 56258264 (the next message starts at 56258265). It is the only message in that file that does not
+use complex packing with spatial differencing: it uses template 5.2 (`grid_complex`), so it exercises a second packing
+path. It is categorical present weather (values 0 to 76), has no bitmap, and ecCodes cannot name it (`shortName` is
+`unknown`) because it is an NBM local parameter. The `.idx` name is the readable one.
+
+```sh
+curl -r 55669237-56258264 -o nbm_complex_msg.grib2 \
+  https://noaa-nbm-grib2-pds.s3.amazonaws.com/blend.20261023/00/core/blend.t00z.core.f001.co.grib2
+```
+
+## NBM f001 packing survey
+
+`grib2_index(..., details := true)` over the five regional f001 core files:
+
+| File | Messages | Packing | Grid |
+|---|---|---|---|
+| CONUS | 153 + 1 | complex with spatial differencing, complex | Lambert |
+| Alaska | 115 + 1 | same | polar stereographic |
+| Guam | 36 + 1 | same | Mercator |
+| Hawaii | 74 | complex with spatial differencing | Mercator |
+| Puerto Rico | 49 | complex with spatial differencing | Mercator |
+
+Only templates 5.3 and 5.2 occur, so no JPEG 2000 or CCSDS decoding is needed for this product. It is one forecast hour of
+the core product; other products and hours may differ.

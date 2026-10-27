@@ -175,6 +175,16 @@ That has not been tried yet; the tests use local files only.
 SQL tests in `test/sql/grib2.test` cover the sidecar, hopping, details, globs, and the error cases (missing file, not a
 GRIB file, and a stale `.idx`, using `test/data/stale.grib2`).
 
+**Survey result (NBM f001 core, all five regions):** only templates 5.3 (complex with spatial differencing) and 5.2
+(complex) occur, and the grid type is constant within a file. Checked with `grib2_index(..., details := true)`. The
+sidecar and an independent walk through all 154 CONUS messages agree on every offset and length. See
+`fixtures/README.md`.
+
+**Masked cells.** Real NBM messages do not always have bitmaps (none of the fixtures here do), so
+`test/data/masked_gu.grib2` is a synthetic Guam message with a bitmap masking 400 cells. ecCodes fills masked cells with
+its missing value (9999). `grib2_point_value` returns NULL for them and `grib2_message_info` leaves them out of min and
+max; `read_grib2` must do the same.
+
 ## Next steps
 
 1. Try `grib2_index()` against S3 (NBM and the HRRR example), and use it to survey packing templates across real files.

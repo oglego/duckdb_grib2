@@ -208,14 +208,15 @@ SELECT short_name, grid_type, ni, nj, grid_template FROM grib2_index('fixtures/n
 ----
 aptmp	polar_stereographic	1649	1105	20
 
-# Globs expand to several files, in path order
+# Globs expand to several files, in path order. nbm_??_msg.grib2 means two-letter region codes (ak, gu, hi, pr), so it
+# does not also match nbm_complex_msg.grib2.
 query II
-SELECT count(*), count(DISTINCT file_path) FROM grib2_index('fixtures/nbm_*_msg.grib2');
+SELECT count(*), count(DISTINCT file_path) FROM grib2_index('fixtures/nbm_??_msg.grib2');
 ----
 4	4
 
 query TI
-SELECT file_path, message_number FROM grib2_index('fixtures/nbm_*_msg.grib2') ORDER BY file_path;
+SELECT file_path, message_number FROM grib2_index('fixtures/nbm_??_msg.grib2') ORDER BY file_path;
 ----
 fixtures/nbm_ak_msg.grib2	1
 fixtures/nbm_gu_msg.grib2	1
@@ -245,3 +246,64 @@ query I
 SELECT count(*) FROM grib2_index('test/data/stale.grib2', idx := false);
 ----
 2
+
+# A real NBM message with template 5.2 (complex packing without spatial differencing): present weather, a local
+# parameter ecCodes cannot name. It has no bitmap. The odd-row points below read 0 in the raw "values" array.
+query I
+SELECT grib2_message_info(content) FROM read_blob('fixtures/nbm_complex_msg.grib2');
+----
+edition=2;shortName=unknown;typeOfLevel=unknown;level=0;gridType=lambert;Ni=2345;Nj=1597;numberOfPoints=3744965;packingType=grid_complex;alternativeRowScanning=1;values=3744965;min=0.000;max=76.000
+
+query I
+SELECT round(grib2_point_value(content, 38.0788, -121.7691), 1) FROM read_blob('fixtures/nbm_complex_msg.grib2');
+----
+1.0
+
+query I
+SELECT round(grib2_point_value(content, 46.9102, -117.843), 1) FROM read_blob('fixtures/nbm_complex_msg.grib2');
+----
+2.0
+
+query I
+SELECT round(grib2_point_value(content, 20.5002, -69.3716), 1) FROM read_blob('fixtures/nbm_complex_msg.grib2');
+----
+10.0
+
+query I
+SELECT round(grib2_point_value(content, 37.0847, -129.8162), 1) FROM read_blob('fixtures/nbm_complex_msg.grib2');
+----
+1.0
+
+query IITTII
+SELECT packing_template, grid_template, packing_type, short_name, parameter_category, parameter_number FROM grib2_index('fixtures/nbm_complex_msg.grib2', details := true);
+----
+2	30	grid_complex	unknown	1	226
+
+# A synthetic message with a bitmap masking 400 cells (test/data/generate_masked_sample.py). ecCodes fills masked cells
+# with its missing value (9999). Min and max leave them out, and a point on a masked cell is NULL.
+query I
+SELECT grib2_message_info(content) FROM read_blob('test/data/masked_gu.grib2');
+----
+edition=2;shortName=cape;typeOfLevel=surface;level=0;gridType=mercator;Ni=193;Nj=193;numberOfPoints=37249;packingType=grid_complex_spatial_differencing;alternativeRowScanning=1;values=37249;min=503.000;max=1811.000
+
+# Masked cells, on an even row and an odd row
+query I
+SELECT grib2_point_value(content, 14.9073, 145.3613) IS NULL FROM read_blob('test/data/masked_gu.grib2');
+----
+true
+
+query I
+SELECT grib2_point_value(content, 14.9304, 145.3613) IS NULL FROM read_blob('test/data/masked_gu.grib2');
+----
+true
+
+# Unmasked cells still decode (odd row, then even row; expected values from ecCodes reading this file)
+query I
+SELECT round(grib2_point_value(content, 13.818, 147.0361), 1) FROM read_blob('test/data/masked_gu.grib2');
+----
+971.0
+
+query I
+SELECT round(grib2_point_value(content, 14.8148, 146.5576), 1) FROM read_blob('test/data/masked_gu.grib2');
+----
+679.0
