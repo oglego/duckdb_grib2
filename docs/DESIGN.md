@@ -185,11 +185,39 @@ sidecar and an independent walk through all 154 CONUS messages agree on every of
 its missing value (9999). `grib2_point_value` returns NULL for them and `grib2_message_info` leaves them out of min and
 max; `read_grib2` must do the same.
 
+## `read_grib2()` as built
+
+`read_grib2(path, message := ..., search := ..., points := ..., bbox := ..., all_cells := false)` in
+`src/grib2_read_function.cpp`. It reuses `IndexFile` (the same message index as `grib2_index`) to find messages, then reads
+and decodes each selected message in turn.
+
+- **Which messages:** all of them by default; `message := 133` or `[133, 134]` selects by number; `search := '...'` is a
+  regular expression (ECMAScript syntax, from `std::regex`, not RE2) matched against the `.idx` inventory text and needs the
+  sidecar. Both can be combined.
+- **Which cells:** exactly one of `points` (nearest cell to each `{'lat', 'lon'}`), `bbox` (`[lon_min, lat_min, lon_max,
+  lat_max]`, every cell centre inside) or `all_cells := true`. With none the function errors, because one CONUS message has
+  3.7 million cells.
+- **Output:** `file_path`, `message_number`, `reference_time`, `valid_time` (reference time plus `step_hours` when the
+  forecast is a simple one), `variable`, `level`, `forecast`, `qualifier` (from the `.idx`, NULL without one), `short_name`
+  (ecCodes), `lat`, `lon`, `i`, `j`, `value`, and in points mode `query_lat`, `query_lon` and `distance_km`.
+- **Masked cells** have a NULL `value`. **Points outside the grid produce no row** (a point inside a message's grid but on
+  a masked cell does produce one, with a NULL value).
+- **Cost:** about one decode per message (roughly 320 ms for a CONUS message in the sandbox measurements above), whatever
+  the spatial selection, because a spatial filter cannot skip decoding. Single-threaded for now. Cell selection (point
+  lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by a fingerprint of
+  the grid parameters), which is the case for every message in an NBM file.
+- **Not yet:** S3 reads (untested), `WHERE lat/lon` pushdown, parallel scans, bilinear interpolation.
+
+Tests cover points on odd and even rows against ecCodes' own nearest-point values, input order, points outside the grid,
+`search` and `message` selection with `valid_time`, a bbox and a whole grid over the synthetic masked message
+(`test/data/masked_gu.grib2`), and the error cases.
+
 ## Next steps
 
-1. Try `grib2_index()` against S3 (NBM and the HRRR example), and use it to survey packing templates across real files.
-2. `read_grib2()` with `points` and `bbox` on a single local file, selecting messages by number or `search`.
-3. S3 and multi-file reads for `read_grib2`, then parallel scans and pushdown.
+1. Try `grib2_index()` and `read_grib2()` against S3 (NBM and the HRRR example). This needs an `httpfs` build for the dev
+   binary; see the README.
+2. Parallel scans (one message per work unit) after checking ecCodes' thread safety, then `WHERE lat/lon` pushdown.
+3. Bilinear interpolation, a table-in variant for thousands of stations, and other grid types (regular lat/lon for GFS).
 
 ## Other sources to try later
 

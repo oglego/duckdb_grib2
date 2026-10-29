@@ -4,6 +4,7 @@
 #include "grib2_codes.hpp"
 #include "grib2_grid.hpp"
 #include "grib2_index_function.hpp"
+#include "grib2_read_function.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -83,58 +84,6 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 	return out;
 }
 
-struct Grib2Grid {
-	std::unique_ptr<ProjectedGrid> grid;
-	//! Rows are stored in alternating directions, see RawValueIndex()
-	bool alternative_rows;
-};
-
-//! Build the grid described by a message's grid definition. Throws for grids that are not supported yet.
-static Grib2Grid MakeGrid(codes_handle *h, const char *function) {
-	const std::string grid_type = Grib2KeyAsString(h, "gridType");
-	if (grid_type != "lambert" && grid_type != "mercator" && grid_type != "polar_stereographic") {
-		throw NotImplementedException(std::string(function) + ": grid type '" + grid_type +
-		                              "' is not supported yet (lambert, mercator and polar_stereographic are)");
-	}
-	// The grid code assumes a spherical earth with the radius ecCodes reports
-	const long shape_of_earth = Grib2LongKey(h, "shapeOfTheEarth", function);
-	if (shape_of_earth != 0 && shape_of_earth != 1 && shape_of_earth != 6 && shape_of_earth != 8) {
-		throw NotImplementedException(std::string(function) + ": shape of the earth " + std::to_string(shape_of_earth) +
-		                              " is not supported yet (spherical only)");
-	}
-	// RawValueIndex() assumes i increases east, j increases north and rows are stored consecutively
-	if (Grib2LongKey(h, "iScansNegatively", function) != 0 || Grib2LongKey(h, "jScansPositively", function) != 1 ||
-	    Grib2LongKey(h, "jPointsAreConsecutive", function) != 0) {
-		throw NotImplementedException(std::string(function) + ": this scanning mode is not supported yet");
-	}
-
-	const int64_t ni = Grib2LongKey(h, "Ni", function);
-	const int64_t nj = Grib2LongKey(h, "Nj", function);
-	const double la1 = Grib2DoubleKey(h, "latitudeOfFirstGridPointInDegrees", function);
-	const double lo1 = Grib2DoubleKey(h, "longitudeOfFirstGridPointInDegrees", function);
-	const double lad = Grib2DoubleKey(h, "LaDInDegrees", function);
-	const double dx = Grib2DoubleKey(h, "DxInMetres", function);
-	const double dy = Grib2DoubleKey(h, "DyInMetres", function);
-	const double radius = Grib2DoubleKey(h, "radius", function);
-
-	Grib2Grid result;
-	result.alternative_rows = Grib2LongKeyOrDefault(h, "alternativeRowScanning", 0) != 0;
-	if (grid_type == "lambert") {
-		result.grid = std::make_unique<LambertGrid>(ni, nj, la1, lo1, lad, Grib2DoubleKey(h, "LoVInDegrees", function),
-		                                            Grib2DoubleKey(h, "Latin1InDegrees", function),
-		                                            Grib2DoubleKey(h, "Latin2InDegrees", function), dx, dy, radius);
-	} else if (grid_type == "polar_stereographic") {
-		if (Grib2LongKey(h, "southPoleOnProjectionPlane", function) != 0) {
-			throw NotImplementedException(std::string(function) + ": south polar stereographic is not supported yet");
-		}
-		result.grid = std::make_unique<PolarStereographicGrid>(
-		    ni, nj, la1, lo1, lad, Grib2DoubleKey(h, "orientationOfTheGridInDegrees", function), dx, dy, radius);
-	} else {
-		result.grid = std::make_unique<MercatorGrid>(ni, nj, la1, lo1, lad, dx, dy, radius);
-	}
-	return result;
-}
-
 static optional<double> PointValueFromMessage(const char *data, idx_t size, double lat, double lon) {
 	const char *function = "grib2_point_value";
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
@@ -184,6 +133,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	loader.RegisterFunction(eccodes_version_function);
 
 	RegisterGrib2IndexFunction(loader);
+	RegisterGrib2ReadFunction(loader);
 
 	// Temporary scaffolding (see the comment above the implementations)
 	auto message_info_function =

@@ -37,7 +37,7 @@ These signatures are a design sketch and may change.
 
 ## Available today
 
-`grib2_index` is the first real table function. `grib2_message_info` and `grib2_point_value` are temporary scaffolding while `read_grib2` is built:
+`grib2_index` and `read_grib2` are the real table functions. `grib2_message_info` and `grib2_point_value` are temporary scaffolding:
 
 ```sql
 SELECT grib2_eccodes_version();  -- version of the linked ecCodes library
@@ -46,7 +46,15 @@ SELECT grib2_eccodes_version();  -- version of the linked ecCodes library
 SELECT message_number, byte_offset, byte_length, variable, level, forecast
 FROM grib2_index('test/data/multi.grib2');
 
--- Without the sidecar (or with idx := false) it hops through the file; details := true adds ecCodes names and grid info
+-- Decoded values for the cells you ask for: one row per cell per message, in long format
+SELECT valid_time, variable, lat, lon, value, distance_km
+FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.21, 'lon': -93.29}]);           -- nearest cell
+SELECT lat, lon, value
+FROM read_grib2('test/data/masked_gu.grib2', bbox := [145.09, 14.65, 145.61, 15.15]);           -- lon_min, lat_min, lon_max, lat_max
+-- read_grib2 also takes message := 133 (or a list) and search := 'TMP:2 m above ground' (a regular expression over
+-- the .idx text), and needs one of points, bbox or all_cells := true.
+
+-- Without the sidecar (or with idx := false) grib2_index hops through the file; details := true adds ecCodes names and grid info
 SELECT message_number, short_name, grid_type, ni, nj, packing_type
 FROM grib2_index('fixtures/nbm_msg.grib2', details := true);
 
@@ -79,7 +87,7 @@ What the decode spike established: ecCodes definitions are available at runtime,
 - [x] `.idx` parser and GRIB2 section-header parser (standalone, tested against the real NBM inventory and ecCodes)
 - [x] `grib2_index()` table function on local files (`.idx` sidecar, header hopping, optional ecCodes details)
 - [ ] Try `grib2_index()` on S3 and survey packing templates across real NBM and HRRR files
-- [ ] `read_grib2()` with `search`, `points` and `bbox`
+- [x] `read_grib2()` with `message`, `search`, `points`, `bbox` and `all_cells` on local files, single-threaded
 - [ ] Filter and projection pushdown
 - [ ] Parallel scans, S3 reads, community extension submission
 

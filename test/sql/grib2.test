@@ -307,3 +307,104 @@ query I
 SELECT round(grib2_point_value(content, 14.8148, 146.5576), 1) FROM read_blob('test/data/masked_gu.grib2');
 ----
 679.0
+
+# read_grib2: nearest cell to a point in a real NBM message. Expected values and the cell come from ecCodes.
+# Springfield, MO is on an odd row, where the raw value array is mirrored: 291.5 is right, 292.9 would be wrong.
+query IIIRRRI
+SELECT message_number, i, j, round(lat, 3), round(lon, 3), round(value, 1), distance_km < 1 FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}]);
+----
+1	1349	643	37.209	-93.292	291.500	true
+
+# Several points come back in the order given, with the query coordinates echoed back
+query RRR
+SELECT round(query_lat, 2), round(query_lon, 2), round(value, 1) FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}, {'lat': 39.77, 'lon': -116.85}, {'lat': 44.40, 'lon': -97.14}]);
+----
+37.210	-93.290	291.500
+39.770	-116.850	281.500
+44.400	-97.140	290.900
+
+# A point outside the grid produces no row
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 0.0, 'lon': 0.0}]);
+----
+0
+
+
+# search matches the .idx inventory text; each message only returns the points that fall inside its grid.
+# valid_time is the reference time plus the step.
+query ITTTRT
+SELECT message_number, variable, level, forecast, round(value, 1), strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('test/data/multi.grib2', search := 'APTMP', points := [{'lat': 17.7425, 'lon': -66.4248}, {'lat': 22.005, 'lon': -154.4903}]) ORDER BY message_number;
+----
+2	APTMP	2 m above ground	1 hour fcst	308.000	2026-10-23 01:00
+3	APTMP	2 m above ground	1 hour fcst	298.900	2026-10-23 01:00
+
+query I
+SELECT message_number FROM read_grib2('test/data/multi.grib2', message := 3, points := [{'lat': 17.7425, 'lon': -66.4248}, {'lat': 22.005, 'lon': -154.4903}]);
+----
+3
+
+
+# bbox over the masked block of the synthetic Guam message (plus a margin): 484 cells, 400 of them masked
+query IIR
+SELECT count(*), count(value), sum(value) FROM read_grib2('test/data/masked_gu.grib2', bbox := [145.092, 14.646, 145.607, 15.145]);
+----
+484	84	79852.000
+
+query IIR
+SELECT count(*), count(value), sum(value) FROM read_grib2('test/data/masked_gu.grib2', bbox := [145.6, 13.5, 146.0, 13.9]);
+----
+289	289	306155.000
+
+# all_cells over the whole 193 x 193 grid: masked cells are NULL, and every (i, j) appears once
+query IIRRR
+SELECT count(*), count(value), sum(value), min(value), max(value) FROM read_grib2('test/data/masked_gu.grib2', all_cells := true);
+----
+37249	36849	40981607.000	503.000	1811.000
+
+query I
+SELECT count(DISTINCT (i, j)) FROM read_grib2('test/data/masked_gu.grib2', all_cells := true);
+----
+37249
+
+
+# A point on a masked cell still returns a row, with a NULL value
+query II
+SELECT message_number, value IS NULL FROM read_grib2('test/data/masked_gu.grib2', points := [{'lat': 14.9073, 'lon': 145.3613}]);
+----
+1	true
+
+# Errors
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');
+----
+needs one of points, bbox or all_cells
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', all_cells := true, bbox := [0, 0, 1, 1]);
+----
+choose only one of points, bbox and all_cells
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [1.0, 2.0, 3.0]);
+----
+bbox must be
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [0, 10, 5, 5]);
+----
+bbox latitudes must satisfy
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', search := 'TMP', all_cells := true);
+----
+search needs the .idx
+
+statement error
+SELECT * FROM read_grib2('test/data/multi.grib2', search := '(', all_cells := true);
+----
+not a valid regular expression
+
+statement error
+SELECT * FROM read_grib2('test/data/multi.grib2', message := 4, all_cells := true);
+----
+is not supported yet
