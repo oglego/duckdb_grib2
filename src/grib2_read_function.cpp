@@ -127,12 +127,23 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 	int modes = 0;
 	for (auto &parameter : input.named_parameters) {
 		const Value &value = parameter.second;
+		if (parameter.first == "all_cells") {
+			if (value.IsNull()) {
+				throw InvalidInputException("read_grib2: all_cells cannot be NULL");
+			}
+			if (BooleanValue::Get(value)) {
+				result->mode = SpatialMode::ALL_CELLS;
+				modes++;
+			}
+			continue;
+		}
+		if (value.IsNull()) {
+			// Optional parameters default to NULL, which means "not given"
+			continue;
+		}
 		if (parameter.first == "message") {
 			result->messages = ParseMessages(value);
 		} else if (parameter.first == "search") {
-			if (value.IsNull()) {
-				throw InvalidInputException("read_grib2: search cannot be NULL");
-			}
 			result->has_search = true;
 			result->search = StringValue::Get(value);
 			try {
@@ -161,14 +172,6 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 			}
 			result->mode = SpatialMode::BBOX;
 			modes++;
-		} else if (parameter.first == "all_cells") {
-			if (value.IsNull()) {
-				throw InvalidInputException("read_grib2: all_cells cannot be NULL");
-			}
-			if (BooleanValue::Get(value)) {
-				result->mode = SpatialMode::ALL_CELLS;
-				modes++;
-			}
 		}
 	}
 	if (modes == 0) {
@@ -341,8 +344,10 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 		state.cell_position = 0;
 		state.loaded = true;
 	} catch (std::exception &error) {
+		// what() of a DuckDB exception is JSON; the plain message reads better
+		const ErrorData details(error);
 		throw InvalidInputException(row.file_path + ": message " + std::to_string(row.message_number) + ": " +
-		                            error.what());
+		                            details.RawMessage());
 	}
 }
 
@@ -489,10 +494,11 @@ void Grib2ReadScan(ClientContext &context, TableFunctionInput &data, DataChunk &
 void RegisterGrib2ReadFunction(ExtensionLoader &loader) {
 	TableFunction function("read_grib2", {LogicalType::VARCHAR}, Grib2ReadScan, Grib2ReadBind, Grib2ReadInit);
 	auto &signature = function.GetSignature();
-	signature.AddKeywordOnly("message", LogicalType::ANY);
-	signature.AddKeywordOnly("search", LogicalType::VARCHAR);
-	signature.AddKeywordOnly("points", LogicalType::ANY);
-	signature.AddKeywordOnly("bbox", LogicalType::ANY);
+	// A keyword-only parameter without a default is required, so the optional ones default to NULL
+	signature.AddKeywordOnly("message", LogicalType::ANY, Value());
+	signature.AddKeywordOnly("search", LogicalType::VARCHAR, Value(LogicalType::VARCHAR));
+	signature.AddKeywordOnly("points", LogicalType::ANY, Value());
+	signature.AddKeywordOnly("bbox", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("all_cells", LogicalType::BOOLEAN, Value::BOOLEAN(false));
 	loader.RegisterFunction(function);
 }
