@@ -206,7 +206,9 @@ and decodes each selected message in turn.
   the spatial selection, because a spatial filter cannot skip decoding. Single-threaded for now. Cell selection (point
   lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by a fingerprint of
   the grid parameters), which is the case for every message in an NBM file.
-- **Not yet:** S3 reads (untested), `WHERE lat/lon` pushdown, parallel scans, bilinear interpolation.
+- **Remote:** verified over HTTPS against the public NBM bucket: the inventory of a 156 MB file in 0.4 s, and one point
+  from one message in 0.8 s, reading the `.idx` and a single 2 MB range.
+- **Not yet:** `s3://` and bucket globs (untested), `WHERE lat/lon` pushdown, parallel scans, bilinear interpolation.
 
 Tests cover points on odd and even rows against ecCodes' own nearest-point values, input order, points outside the grid,
 `search` and `message` selection with `valid_time`, a bbox and a whole grid over the synthetic masked message
@@ -214,10 +216,14 @@ Tests cover points on odd and even rows against ecCodes' own nearest-point value
 
 ## Next steps
 
-1. Try `grib2_index()` and `read_grib2()` against S3 (NBM and the HRRR example). This needs an `httpfs` build for the dev
-   binary; see the README.
-2. Parallel scans (one message per work unit) after checking ecCodes' thread safety, then `WHERE lat/lon` pushdown.
-3. Bilinear interpolation, a table-in variant for thousands of stations, and other grid types (regular lat/lon for GFS).
+1. Remote reads beyond the verified HTTPS case: the `s3://` scheme, globs over a bucket, a remote file with no `.idx`
+   (the existence check may behave differently on a 403), and a time series across several forecast hours.
+2. The `search` convenience: also match with colons around the fields, as Herbie users type them.
+3. Parallel scans. Local decode costs about 20 ms per message (3.2 s for the 154 messages of a CONUS file, one thread), so
+   this mostly matters for many-file time series. ecCodes is built thread-safe in the vcpkg port (POSIX threads on Linux
+   and macOS, OpenMP on Windows); each message already gets its own handle.
+4. Release prep, then `WHERE lat/lon` pushdown, bilinear interpolation, a table-in variant for many stations, and other
+   grid types (regular lat/lon for GFS).
 
 ## Other sources to try later
 

@@ -77,6 +77,60 @@ What the decode spike established: ecCodes definitions are available at runtime,
 
 **A trap worth knowing about:** this grid has `alternativeRowScanning = 1`, so ecCodes returns `values` with every other row stored east to west while latitudes and longitudes are in canonical order. Pairing them directly mirrors half the rows. See [docs/DESIGN.md](docs/DESIGN.md).
 
+## Remote files
+
+Both functions read through DuckDB's file system, so with `httpfs` loaded they work on `https://` URLs. Verified against the
+public NOAA NBM bucket (macOS arm64, DuckDB v2.0.0-dev build):
+
+```sql
+LOAD httpfs;   -- INSTALL httpfs first on a released DuckDB
+LOAD grib2;
+
+-- The inventory of a 156 MB file: all 154 messages in 0.4 s (it reads only the .idx)
+SELECT count(*), max(byte_offset + byte_length)
+FROM grib2_index('https://noaa-nbm-grib2-pds.s3.amazonaws.com/blend.20261023/00/core/blend.t00z.core.f001.co.grib2');
+
+-- 2 m temperature at one point: 0.8 s, reading the .idx and a single 2 MB range, not the whole file
+SELECT valid_time, variable, round(value, 1)
+FROM read_grib2('https://noaa-nbm-grib2-pds.s3.amazonaws.com/blend.20261023/00/core/blend.t00z.core.f001.co.grib2',
+                search := '^TMP:2 m above ground:1 hour fcst$',
+                points := [{'lat': 37.209, 'lon': -93.2923}]);
+```
+
+Not yet tried: the `s3://` scheme, globs over a bucket, and a remote file with no `.idx` (the existence check may behave
+differently on a 403).
+
+**`httpfs` in a locally built binary.** A binary built from the `duckdb` submodule has no published `httpfs`, so
+`INSTALL httpfs` returns a 404. Build it in by adding this to your local `extension_config.cmake` (do not commit it) and
+running `make` again:
+
+```cmake
+duckdb_extension_load(httpfs
+    GIT_URL https://github.com/duckdb/duckdb-httpfs
+    GIT_TAG a2485c0fd240cbddc0d467019f30201c9a46cf06
+)
+```
+
+Then load both by path (`httpfs` first):
+
+```sh
+./build/release/duckdb -unsigned \
+  -c "LOAD './build/release/extension/httpfs/httpfs.duckdb_extension';" \
+  -c "LOAD './build/release/extension/grib2/grib2.duckdb_extension';"
+```
+
+## Performance
+
+Measured on an 8-core Apple silicon Mac with the real NBM CONUS file, local disk:
+
+| Query | Time |
+|---|---|
+| `read_grib2` points query across all 154 messages | 3.2 s (about 20 ms per message, one thread) |
+| Every cell of one message (3.7M rows, aggregated) | 0.3 s |
+
+A spatial filter does not make decoding cheaper: a message is decoded in full whatever you select, so filters save rows and
+memory rather than decode time. Scans are single-threaded for now.
+
 ## Roadmap
 
 - [x] Extension scaffold with ecCodes linked via vcpkg, building in CI
@@ -86,7 +140,9 @@ What the decode spike established: ecCodes definitions are available at runtime,
 - [x] Survey the other NBM regions' grids (all use the same packing and stored-row order; three projections)
 - [x] `.idx` parser and GRIB2 section-header parser (standalone, tested against the real NBM inventory and ecCodes)
 - [x] `grib2_index()` table function on local files (`.idx` sidecar, header hopping, optional ecCodes details)
-- [ ] Try `grib2_index()` on S3 and survey packing templates across real NBM and HRRR files
+- [x] Packing survey across the real NBM f001 files (only templates 5.2 and 5.3)
+- [x] `grib2_index()` and `read_grib2()` over HTTPS through `httpfs`, against the public NBM bucket
+- [ ] `s3://` URLs, globs over a bucket, a remote file with no `.idx`, and time series across several files
 - [x] `read_grib2()` with `message`, `search`, `points`, `bbox` and `all_cells` on local files, single-threaded
 - [ ] Filter and projection pushdown
 - [ ] Parallel scans, S3 reads, community extension submission
