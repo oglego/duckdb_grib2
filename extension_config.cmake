@@ -5,10 +5,8 @@ duckdb_extension_load(grib2
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}
 )
 
-duckdb_extension_load(httpfs
-    GIT_URL https://github.com/duckdb/duckdb-httpfs
-    GIT_TAG a2485c0fd240cbddc0d467019f30201c9a46cf06
-)
-
 # Any extra extensions that should be built
 # e.g.: duckdb_extension_load(json)
+#
+# Do not add httpfs here: CI builds every extension listed in this file, and httpfs needs libcurl, which is not in this
+# repository's vcpkg manifest. For local testing against remote files, see "Remote files" in the README.

@@ -9,3 +9,6 @@ test/python/__pycache__/
 
 # Whole NBM files used for exploration; commit only single extracted messages (scripts/extract_message.py)
 fixtures/nbm/
+
+# Local-only build config (adds httpfs for testing remote files); see the README
+extension_config_local.cmake

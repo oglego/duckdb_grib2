@@ -101,8 +101,11 @@ Not yet tried: the `s3://` scheme, globs over a bucket, and a remote file with n
 differently on a 403).
 
 **`httpfs` in a locally built binary.** A binary built from the `duckdb` submodule has no published `httpfs`, so
-`INSTALL httpfs` returns a 404. Build it in by adding this to your local `extension_config.cmake` (do not commit it) and
-running `make` again:
+`INSTALL httpfs` returns a 404. Build it into your own binary with a local, git-ignored config file. Do **not** add it to
+`extension_config.cmake`: CI builds every extension listed there, and `httpfs` needs libcurl, which is not in this repo's
+vcpkg manifest, so the CI build fails with `Could NOT find CURL`.
+
+Create `extension_config_local.cmake` next to `extension_config.cmake` (it is git-ignored):
 
 ```cmake
 duckdb_extension_load(httpfs
@@ -111,13 +114,21 @@ duckdb_extension_load(httpfs
 )
 ```
 
-Then load both by path (`httpfs` first):
+Then build with it (from the repository root):
+
+```sh
+make EXTRA_EXTENSION_CONFIGS=$PWD/extension_config_local.cmake
+```
+
+This worked on macOS arm64 with the system libcurl. Then load both by path (`httpfs` first):
 
 ```sh
 ./build/release/duckdb -unsigned \
   -c "LOAD './build/release/extension/httpfs/httpfs.duckdb_extension';" \
   -c "LOAD './build/release/extension/grib2/grib2.duckdb_extension';"
 ```
+
+A plain `make` afterwards builds without `httpfs` again, so use the same command each time you want it.
 
 ## Performance
 
