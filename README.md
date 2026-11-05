@@ -8,6 +8,32 @@ The end goal is to run queries directly against GRIB2 files in object storage, s
 
 Built from the [DuckDB extension template](https://github.com/duckdb/extension-template).
 
+## Quickstart
+
+```sql
+LOAD grib2;
+
+-- What is in a GRIB2 file? Reads only the .idx that sits next to it, when there is one
+SELECT message_number, variable, level, forecast FROM grib2_index('path/to/file.grib2') LIMIT 10;
+
+-- 2 m temperature at a point, as a time series across forecast hours
+SELECT valid_time, round(value, 1) AS kelvin
+FROM read_grib2('blend.t00z.core.f00[1-6].co.grib2',
+                search := '^TMP:2 m above ground:\\d+ hour fcst$',
+                points := [{'lat': 37.21, 'lon': -93.29}])
+ORDER BY valid_time;
+
+-- Every cell inside a box (lon_min, lat_min, lon_max, lat_max)
+SELECT lat, lon, value FROM read_grib2('path/to/file.grib2', message := 133, bbox := [-95, 36, -92, 38]);
+```
+
+Local files need nothing else. For `https://` or `s3://` paths, load `httpfs` first (see "Remote files").
+
+`search` is a regular expression over the `.idx` text of each message, which looks like `TMP:2 m above ground:1 hour fcst`
+(variable, level, forecast, and a qualifier such as `50% level` when there is one). It is matched as it is and with colons
+around it, so `':TMP:2 m above ground:'` selects whole fields, whereas an unanchored `TMP:2 m above ground` would also match
+`APTMP:2 m above ground`. Use `^` and `$` to pin down a single message.
+
 ## Planned API
 
 Spatial selection comes first: most users want a few places, not a whole domain. See [docs/DESIGN.md](docs/DESIGN.md)
@@ -97,8 +123,16 @@ FROM read_grib2('https://noaa-nbm-grib2-pds.s3.amazonaws.com/blend.20261023/00/c
                 points := [{'lat': 37.209, 'lon': -93.2923}]);
 ```
 
-Not yet tried: the `s3://` scheme, globs over a bucket, and a remote file with no `.idx` (the existence check may behave
-differently on a 403).
+Also verified: the `s3://` scheme on the public bucket (after `SET s3_region = 'us-east-1'`), a glob over a bucket
+(`f00[1-6]`) giving a six-hour time series in about 5 s, and header hopping on a remote file with no sidecar
+(`idx := false`).
+
+Each HTTP request costs about 75 ms of round trip from the author's machine, and a 2 MB message takes about 0.4 s to
+download on one connection. Hopping through a file with no `.idx` makes one request per message (37 messages took about 2.7
+to 3.1 s, 154 took about 12 s), so use the `.idx` where it exists: it is a single request for the whole inventory.
+
+`grib2_index` and `read_grib2` index several files at once, and `read_grib2` fetches the next few messages while it decodes
+the current one. Rows still come back in a fixed order (files in path order, messages in file order).
 
 **`httpfs` in a locally built binary.** A binary built from the `duckdb` submodule has no published `httpfs`, so
 `INSTALL httpfs` returns a 404. Build it into your own binary with a local, git-ignored config file. Do **not** add it to

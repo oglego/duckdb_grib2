@@ -3,6 +3,7 @@
 #include "grib2_codes.hpp"
 #include "grib2_grid.hpp"
 #include "grib2_index_file.hpp"
+#include "grib2_message.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -10,6 +11,8 @@
 #include "duckdb/function/table_function.hpp"
 
 #include <algorithm>
+#include <deque>
+#include <future>
 #include <regex>
 #include <string>
 #include <vector>
@@ -208,6 +211,9 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 	return result;
 }
 
+//! How many messages are fetched ahead of the one being decoded
+constexpr idx_t PREFETCH_MESSAGES = 6;
+
 struct PointHit {
 	idx_t point_index;
 	GridCell cell;
@@ -232,7 +238,11 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	std::vector<optional<std::string>> short_names;
 
 	idx_t message_position = 0;
-	unique_ptr<FileReader> reader;
+	FileSystem *fs = nullptr;
+	//! Messages whose bytes are being fetched in the background, in message order. Fetching is waiting for round trips,
+	//! so it overlaps with decoding; decoding itself stays on the scanning thread, which keeps row order deterministic.
+	std::deque<std::future<std::string>> pending;
+	idx_t prefetch_next = 0;
 
 	// The message currently being emitted
 	bool loaded = false;
@@ -257,13 +267,19 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	auto files = fs.GlobFiles(bind_data.pattern, FileGlobOptions::DISALLOW_EMPTY);
 	std::sort(files.begin(), files.end(), [](const OpenFileInfo &a, const OpenFileInfo &b) { return a.path < b.path; });
 
+	state->fs = &fs;
+
 	std::regex search;
 	if (bind_data.has_search) {
 		search = std::regex(bind_data.search, std::regex::ECMAScript);
 	}
+	std::vector<std::string> paths;
 	for (const auto &file : files) {
-		std::vector<Grib2IndexRow> rows;
-		IndexFile(fs, file.path, true, false, rows);
+		paths.push_back(file.path);
+	}
+	// Each message is validated as it is read, so the up-front check of the first message is skipped. Files are indexed
+	// several at a time; the results come back in path order.
+	for (auto &rows : IndexFiles(fs, paths, true, false, false, 8)) {
 		for (auto &row : rows) {
 			if (!bind_data.messages.empty() && std::find(bind_data.messages.begin(), bind_data.messages.end(),
 			                                             row.message_number) == bind_data.messages.end()) {
@@ -271,11 +287,14 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 			}
 			if (bind_data.has_search) {
 				if (!row.inventory) {
-					throw InvalidInputException("read_grib2: search needs the .idx file that goes with " + file.path +
+					throw InvalidInputException("read_grib2: search needs the .idx file that goes with " +
+					                            row.file_path +
 					                            " (it holds the variable and level names); select messages with "
 					                            "message := ... instead");
 				}
-				if (!std::regex_search(*row.inventory, search)) {
+				// Match the text as it is and with colons around it, so ":TMP:2 m above ground:" works too
+				if (!std::regex_search(*row.inventory, search) &&
+				    !std::regex_search(":" + *row.inventory + ":", search)) {
 					continue;
 				}
 			}
@@ -286,15 +305,42 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	return state;
 }
 
+//! Start fetching the bytes of upcoming messages, keeping a few in flight
+void FillPrefetch(Grib2ReadGlobalState &state) {
+	while (state.pending.size() < PREFETCH_MESSAGES && state.prefetch_next < state.messages.size()) {
+		const Grib2IndexRow &row = state.messages[state.prefetch_next++];
+		FileSystem *fs = state.fs;
+		state.pending.push_back(std::async(
+		    std::launch::async, [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
+			    // Each fetch opens its own handle: concurrent reads on one remote handle are not something to rely on
+			    const FileReader reader(*fs, path);
+			    return reader.ReadAt(offset, length);
+		    }));
+	}
+}
+
 //! Read and decode the next message and work out which cells to emit
 void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Grib2ReadGlobalState &state) {
 	const char *function = "read_grib2";
 	const Grib2IndexRow &row = state.messages[state.message_position];
-	if (!state.reader || state.reader->path != row.file_path) {
-		state.reader = make_uniq<FileReader>(FileSystem::GetFileSystem(context), row.file_path);
-	}
 	try {
-		const std::string bytes = state.reader->ReadAt(row.byte_offset, row.byte_length);
+		FillPrefetch(state);
+		const std::string bytes = state.pending.front().get();
+		state.pending.pop_front();
+		FillPrefetch(state);
+		// Without the up-front check, this is what notices an .idx that does not belong to the file
+		MessageSummary indicator;
+		size_t needed = 0;
+		std::string indicator_error;
+		if (ParseIndicator(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size(), indicator, needed,
+		                   indicator_error) != SectionParseResult::OK) {
+			throw InvalidInputException(indicator_error + " (does the .idx belong to this file?)");
+		}
+		if (static_cast<int64_t>(indicator.total_length) != row.byte_length) {
+			throw InvalidInputException("the message is " + std::to_string(indicator.total_length) +
+			                            " bytes but the index says " + std::to_string(row.byte_length) +
+			                            " (does the .idx belong to this file?)");
+		}
 		CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
 		codes_handle *h = handle.get();
 

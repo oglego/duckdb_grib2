@@ -408,3 +408,34 @@ statement error
 SELECT * FROM read_grib2('test/data/multi.grib2', message := 4, all_cells := true);
 ----
 is not supported yet
+
+# search also matches with colons around the text, as it is often typed (':TMP:2 m above ground:'). The colons make it
+# field-aligned: ':PTMP:' is inside 'APTMP' but not a whole field, so it matches nothing.
+query I
+SELECT message_number FROM read_grib2('test/data/multi.grib2', search := ':APTMP:2 m above ground:', points := [{'lat': 17.7425, 'lon': -66.4248}, {'lat': 22.005, 'lon': -154.4903}]) ORDER BY message_number;
+----
+2
+3
+
+query I
+SELECT count(*) FROM read_grib2('test/data/multi.grib2', search := ':PTMP:', points := [{'lat': 17.7425, 'lon': -66.4248}, {'lat': 22.005, 'lon': -154.4903}]);
+----
+0
+
+
+# read_grib2 no longer checks the .idx up front: each message is validated as it is read, which still catches a sidecar
+# that does not belong to the file (here message 1 is claimed to be 100 bytes long, but is 277)
+statement error
+SELECT * FROM read_grib2('test/data/stale.grib2', message := 1, all_cells := true);
+----
+belong to this file
+
+# Several files at once, each on its own grid. Files are indexed concurrently and messages are fetched ahead, but the
+# rows come back in path order (no ORDER BY here on purpose); every point lands in exactly one of the four grids.
+query TIR
+SELECT file_path, message_number, round(value, 1) FROM read_grib2('fixtures/nbm_??_msg.grib2', points := [{'lat': 58.0874, 'lon': -154.1681}, {'lat': 13.818, 'lon': 147.0361}, {'lat': 22.005, 'lon': -154.4903}, {'lat': 17.7425, 'lon': -66.4248}]);
+----
+fixtures/nbm_ak_msg.grib2	1	275.700
+fixtures/nbm_gu_msg.grib2	1	969.000
+fixtures/nbm_hi_msg.grib2	1	298.900
+fixtures/nbm_pr_msg.grib2	1	308.000

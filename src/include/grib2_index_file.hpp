@@ -3,6 +3,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/file_system.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,16 @@ public:
 	      size(static_cast<int64_t>(handle->GetFileSize())) {
 	}
 
+	//! Open a file, or return nullptr when it does not exist. One request for a remote file, where checking that it
+	//! exists first and then opening it would be two.
+	static unique_ptr<FileReader> OpenIfExists(FileSystem &fs, const std::string &path) {
+		auto handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_READ | FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS);
+		if (!handle) {
+			return nullptr;
+		}
+		return unique_ptr<FileReader>(new FileReader(path, std::move(handle)));
+	}
+
 	std::string ReadAt(int64_t offset, int64_t length) const {
 		if (offset < 0 || length < 0 || offset + length > size) {
 			throw IOException(path + ": cannot read " + std::to_string(length) + " bytes at offset " +
@@ -69,6 +80,11 @@ public:
 	std::string path;
 	unique_ptr<FileHandle> handle;
 	int64_t size;
+
+private:
+	FileReader(const std::string &path_p, unique_ptr<FileHandle> handle_p)
+	    : path(path_p), handle(std::move(handle_p)), size(static_cast<int64_t>(handle->GetFileSize())) {
+	}
 };
 
 optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int minute, int second);
@@ -76,6 +92,17 @@ optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int 
 //! Index every message in one file, appending to `rows`. Uses the ".idx" sidecar when use_idx is true and one exists,
 //! otherwise hops through the file using the length in each indicator section. With `details`, also reads a short
 //! prefix of each message and asks ecCodes for names, level and grid details.
-void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows);
+//!
+//! verify_first_message checks the first message against the sidecar (every message when `details` is set), which
+//! costs one read; callers that validate each message as they read it can turn it off.
+void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows,
+               bool verify_first_message = true);
+
+//! Index several files, up to max_parallel at a time. Reading the index of a remote file is mostly waiting for round
+//! trips, so doing several at once is much faster than one after another. The result has one entry per path, in the
+//! order of `paths`, whatever order the work finished in. An error from any file is rethrown after all have finished.
+//! With `details` the files are done one at a time, because that path calls into ecCodes.
+std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::vector<std::string> &paths, bool use_idx,
+                                                   bool details, bool verify_first_message, idx_t max_parallel);
 
 } // namespace duckdb

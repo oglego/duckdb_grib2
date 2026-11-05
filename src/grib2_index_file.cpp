@@ -8,7 +8,10 @@
 #include "duckdb/common/types/time.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <exception>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace duckdb {
@@ -93,15 +96,17 @@ static void FillDetails(Grib2IndexRow &row, const std::string &prefix) {
 	                            std::to_string(offset) + ": " + error);
 }
 
-void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows) {
+void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows,
+               bool verify_first_message) {
 	const FileReader file(fs, path);
 	const std::string idx_path = path + ".idx";
 
-	if (use_idx && fs.FileExists(idx_path)) {
-		const FileReader idx_file(fs, idx_path);
+	// Opening the sidecar directly, instead of checking that it exists first, saves a request on remote files
+	const unique_ptr<FileReader> idx_file = use_idx ? FileReader::OpenIfExists(fs, idx_path) : nullptr;
+	if (idx_file) {
 		std::vector<IdxEntry> entries;
 		std::string error;
-		if (!ParseIdx(idx_file.ReadAt(0, idx_file.size), file.size, entries, error)) {
+		if (!ParseIdx(idx_file->ReadAt(0, idx_file->size), file.size, entries, error)) {
 			throw InvalidInputException(idx_path + ": " + error);
 		}
 		for (size_t i = 0; i < entries.size(); i++) {
@@ -124,7 +129,7 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 
 			// A sidecar that does not belong to the file would silently give wrong offsets, so check it against the
 			// message itself: every message with details, otherwise just the first one.
-			if (details || i == 0) {
+			if (details || (verify_first_message && i == 0)) {
 				MessageSummary summary;
 				std::string prefix;
 				if (!ReadSections(file, entry.byte_offset, entry.byte_length, summary, prefix, error)) {
@@ -174,6 +179,47 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 		offset += length;
 		number++;
 	}
+}
+
+std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::vector<std::string> &paths, bool use_idx,
+                                                   bool details, bool verify_first_message, idx_t max_parallel) {
+	std::vector<std::vector<Grib2IndexRow>> results(paths.size());
+	std::vector<std::exception_ptr> errors(paths.size());
+	std::atomic<size_t> next(0);
+	const auto work = [&]() {
+		while (true) {
+			const size_t i = next.fetch_add(1);
+			if (i >= paths.size()) {
+				return;
+			}
+			try {
+				IndexFile(fs, paths[i], use_idx, details, results[i], verify_first_message);
+			} catch (...) {
+				errors[i] = std::current_exception();
+			}
+		}
+	};
+
+	const size_t workers = details ? 1 : std::min<size_t>(max_parallel, paths.size());
+	if (workers <= 1) {
+		work();
+	} else {
+		// The calling thread takes part, so one fewer thread is started
+		std::vector<std::thread> threads;
+		for (size_t t = 1; t < workers; t++) {
+			threads.emplace_back(work);
+		}
+		work();
+		for (auto &thread : threads) {
+			thread.join();
+		}
+	}
+	for (const auto &error : errors) {
+		if (error) {
+			std::rethrow_exception(error);
+		}
+	}
+	return results;
 }
 
 } // namespace duckdb

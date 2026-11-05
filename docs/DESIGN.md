@@ -206,8 +206,23 @@ and decodes each selected message in turn.
   the spatial selection, because a spatial filter cannot skip decoding. Single-threaded for now. Cell selection (point
   lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by a fingerprint of
   the grid parameters), which is the case for every message in an NBM file.
-- **Remote:** verified over HTTPS against the public NBM bucket: the inventory of a 156 MB file in 0.4 s, and one point
-  from one message in 0.8 s, reading the `.idx` and a single 2 MB range.
+- **Remote:** verified over HTTPS and `s3://` against the public NBM bucket: the inventory of a 156 MB file in 0.4 s, one
+  point from one message in 0.8 s (reading the `.idx` and a single 2 MB range), and a six-file time series in 5 s.
+  Measured with request logging on the 37-message Guam file: exactly one range request per message plus one to open the
+  file, each taking 64 to 80 ms, so wall time is round-trip latency (about 2.7 to 3.1 s). Disabling certificate
+  verification made no difference. One run burned CPU for its whole duration and others did not, for the same query; that
+  is unexplained and did not change the wall time. An earlier theory that `httpfs` over-fetches in 1 MiB buffers was wrong
+  for this version: each read is one exact range request.
+- **Where remote time goes** (request log of a six-file `s3://` time series, 4.3 s wall): one glob listing 0.26 s; per file
+  a `HEAD` on the data (about 52 ms), a `HEAD` on the `.idx` (about 55 ms) and a `GET` of the `.idx` (74 to 107 ms), 1.1 s
+  for all six; and the six 2 MB message reads at 0.36 to 0.49 s each, 2.4 s together (about 5 MB/s on one connection). All
+  of it was sequential. `IndexFiles` now indexes up to eight files at once, and `read_grib2` keeps six message fetches in
+  flight while decoding the current one. Decoding stays on the scanning thread, so the row order is deterministic and ecCodes
+  is not called concurrently. Each background fetch opens its own file handle rather than sharing one across threads.
+  `details := true` indexes files one at a time because it calls into ecCodes.
+- **Requests per file in `read_grib2`:** open the data file, open the sidecar directly (a 404 returns nothing, instead of a
+  separate existence check), read the sidecar, then one read per selected message. Each message is validated as it is read,
+  which also catches a sidecar that does not belong to the file.
 - **Not yet:** `s3://` and bucket globs (untested), `WHERE lat/lon` pushdown, parallel scans, bilinear interpolation.
 
 Tests cover points on odd and even rows against ecCodes' own nearest-point values, input order, points outside the grid,
@@ -216,13 +231,11 @@ Tests cover points on odd and even rows against ecCodes' own nearest-point value
 
 ## Next steps
 
-1. Remote reads beyond the verified HTTPS case: the `s3://` scheme, globs over a bucket, a remote file with no `.idx`
-   (the existence check may behave differently on a 403), and a time series across several forecast hours.
-2. The `search` convenience: also match with colons around the fields, as Herbie users type them.
-3. Parallel scans. Local decode costs about 20 ms per message (3.2 s for the 154 messages of a CONUS file, one thread), so
-   this mostly matters for many-file time series. ecCodes is built thread-safe in the vcpkg port (POSIX threads on Linux
-   and macOS, OpenMP on Windows); each message already gets its own handle.
-4. Release prep, then `WHERE lat/lon` pushdown, bilinear interpolation, a table-in variant for many stations, and other
+1. Measure the concurrent version against the six-file series (4.3 s before). Then, if it is worth it: read the headers for
+   `details` concurrently when offsets are known, and parallel decoding (local decode is about 20 ms per message, 3.2 s for
+   the 154 messages of a CONUS file). ecCodes is built thread-safe in the vcpkg port (POSIX threads on Linux and macOS,
+   OpenMP on Windows) but that has not been exercised; parallel decoding would also make row order nondeterministic.
+2. Release prep, then `WHERE lat/lon` pushdown, bilinear interpolation, a table-in variant for many stations, and other
    grid types (regular lat/lon for GFS).
 
 ## Other sources to try later

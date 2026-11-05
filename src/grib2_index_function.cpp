@@ -106,8 +106,15 @@ unique_ptr<GlobalTableFunctionState> Grib2IndexInit(ClientContext &context, Tabl
 	auto &fs = FileSystem::GetFileSystem(context);
 	auto files = fs.GlobFiles(bind_data.pattern, FileGlobOptions::DISALLOW_EMPTY);
 	std::sort(files.begin(), files.end(), [](const OpenFileInfo &a, const OpenFileInfo &b) { return a.path < b.path; });
+	std::vector<std::string> paths;
 	for (const auto &file : files) {
-		IndexFile(fs, file.path, bind_data.use_idx, bind_data.details, state->rows);
+		paths.push_back(file.path);
+	}
+	// Several files at once: for remote files the time is round trips, not CPU
+	for (auto &rows : IndexFiles(fs, paths, bind_data.use_idx, bind_data.details, true, 8)) {
+		for (auto &row : rows) {
+			state->rows.push_back(std::move(row));
+		}
 	}
 	return state;
 }
