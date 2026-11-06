@@ -229,6 +229,25 @@ Tests cover points on odd and even rows against ecCodes' own nearest-point value
 `search` and `message` selection with `valid_time`, a bbox and a whole grid over the synthetic masked message
 (`test/data/masked_gu.grib2`), and the error cases.
 
+## Publishing (community-extensions)
+
+Read from the community-extensions repository (`duckdb/community-extensions`) rather than assumed:
+
+- Its CI builds extensions for `DUCKDB_LATEST_STABLE`, which was `v2.0.0` at DuckDB commit `d54cbbe3df17...`, using
+  `extension-ci-tools@v2.0-cyanoptera` and vcpkg commit `cd61e1e26a03...`. These are the same pins this repository uses
+  (the `duckdb` submodule, `MainDistributionPipeline.yml`, and the ecCodes overlay port copied from that vcpkg commit), so no
+  porting is needed. Extensions written for the C++ template are tied to one DuckDB version: this one uses v2 APIs and would
+  need changes for the older release lines.
+- A descriptor is `extensions/<name>/description.yml` with `extension:` (name, description, version, language, build,
+  license, `excluded_platforms`, `maintainers`) and `repo:` (`github`, and `ref`, the commit that is built for the latest
+  stable release), plus `docs:` (`hello_world`, `extended_description`). Optional keys `variegata` and `andium` give refs for
+  the previous release lines, and `ref_next` a ref for the upcoming one. A draft is in
+  `docs/community-extensions-description.yml`.
+- No GRIB extension exists in the repository (checked by name), and `zarr`, `hdf5` and `geotiff` are the nearest neighbours.
+- Most extensions are MIT (332 of 412) or Apache-2.0 (52).
+- To publish: make sure CI is green on `main`, choose the commit, put it in `ref`, and open a pull request adding the
+  descriptor.
+
 ## Next steps
 
 1. Measure the concurrent version against the six-file series (4.3 s before). Then, if it is worth it: read the headers for

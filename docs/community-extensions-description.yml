@@ -1,0 +1,43 @@
+# Draft descriptor for the DuckDB community-extensions repository.
+#
+# To publish: copy this file to extensions/grib2/description.yml in https://github.com/duckdb/community-extensions, replace
+# `ref` with the commit of this repository to publish, and open a pull request. See "Publishing" in docs/DESIGN.md.
+extension:
+  name: grib2
+  description: "Query GRIB2 weather data with SQL: list messages, and read decoded values at points or in bounding boxes, from local files or object storage such as NOAA's NBM bucket"
+  version: 0.1.0
+  language: C++
+  build: cmake
+  license: MIT
+  excluded_platforms: "wasm_mvp;wasm_eh;wasm_threads;windows_amd64_mingw"
+  maintainers:
+    - oglego
+
+repo:
+  github: oglego/duckdb_grib2
+  ref: REPLACE_WITH_COMMIT_HASH
+
+docs:
+  hello_world: |
+    -- Needed once, for https:// and s3:// paths
+    INSTALL httpfs;
+    LOAD httpfs;
+    SET s3_region = 'us-east-1';
+
+    -- 2 m temperature at one point for six forecast hours from NOAA's NBM bucket.
+    -- Replace 20261023 with a recent run date: the bucket keeps a limited window of runs.
+    SELECT valid_time, round(value, 1) AS kelvin
+    FROM read_grib2('s3://noaa-nbm-grib2-pds/blend.20261023/00/core/blend.t00z.core.f00[1-6].co.grib2',
+                    search := '^TMP:2 m above ground:\d+ hour fcst$',
+                    points := [{'lat': 37.209, 'lon': -93.2923}])
+    ORDER BY valid_time;
+
+  extended_description: |
+    `grib2_index(path)` lists the messages in a GRIB2 file (using the `.idx` inventory next to it when there is one), and
+    `read_grib2(path, ...)` returns decoded values in long format for the points (`points := [{'lat': ..., 'lon': ...}]`),
+    bounding box (`bbox := [lon_min, lat_min, lon_max, lat_max]`) or whole grid you ask for. Messages are selected by number
+    (`message := ...`) or by a regular expression over the inventory text (`search := ...`). Only the bytes needed are read,
+    so a point from a 150 MB remote file reads about 2 MB.
+
+    Supports the Lambert conformal, polar stereographic and Mercator grids of the NOAA National Blend of Models. Decoding is
+    done by ecCodes. For more, see the [documentation](https://github.com/oglego/duckdb_grib2).

@@ -34,7 +34,7 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 }
 
 // ---------------------------------------------------------------------------
-// Temporary scaffolding while grib2_index() and read_grib2() are built:
+// Low-level helpers that work on one GRIB message held in a BLOB (for example from read_blob()):
 //
 //   grib2_message_info(BLOB) -> VARCHAR
 //     Decodes the first GRIB message in a buffer and describes it. Validates that ecCodes definitions and the
@@ -44,7 +44,7 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 //     Value at the grid cell nearest to a point. Exercises the full path used by read_grib2(): grid keys, scanning
 //     mode checks, nearest-cell lookup, value ordering and decoding. NULL when the point is outside the grid.
 //     Supports the projections NBM uses: Lambert conformal, polar stereographic and Mercator.
-//     Decodes the whole message once per row, so it is only meant for tests and spot checks.
+//     Decodes the whole message once per row, so use read_grib2() for more than a spot check.
 // ---------------------------------------------------------------------------
 static std::string DescribeGribMessage(const char *data, idx_t size) {
 	const char *function = "grib2_message_info";
@@ -135,7 +135,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterGrib2IndexFunction(loader);
 	RegisterGrib2ReadFunction(loader);
 
-	// Temporary scaffolding (see the comment above the implementations)
+	// Helpers for messages held in a BLOB (see the comment above the implementations)
 	auto message_info_function =
 	    ScalarFunction("grib2_message_info", {LogicalType::BLOB}, LogicalType::VARCHAR, Grib2MessageInfoScalarFun);
 	message_info_function.SetFallible();
