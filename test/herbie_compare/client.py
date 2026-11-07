@@ -141,7 +141,9 @@ class Grib2Client:
             proc = subprocess.run(self._cli_args(copy), capture_output=True, text=True, cwd=REPO)
             if proc.returncode != 0:
                 if proc.returncode < 0 or "Segmentation" in proc.stderr:
-                    raise AssertionError(f"DuckDB CLI CRASHED (rc={proc.returncode}) on: {query}\n{proc.stderr[-2000:]}")
+                    raise AssertionError(
+                        f"DuckDB CLI CRASHED (rc={proc.returncode}) on: {query}\n{proc.stderr[-2000:]}"
+                    )
                 raise RuntimeError((proc.stderr or proc.stdout).strip())
             df = pd.read_csv(out, na_values=[NULL_TOKEN], keep_default_na=False, low_memory=False)
             return df

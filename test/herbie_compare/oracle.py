@@ -19,6 +19,7 @@ Only spatial reads of the fixtures in ``reference.GRIDS`` are supported; anythin
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -67,7 +68,7 @@ class OracleClient:
                 "file_path": ref.source,
                 "message_number": ref.message_number,
                 "reference_time": ref.reference_time,
-                "valid_time": ref.valid_time,
+                "valid_time": ref.valid_time if Path(ref.source + ".idx").exists() else pd.NaT,
                 "lat": ref.lat[jj, ii],
                 "lon": ref.lon[jj, ii],
                 "i": ii,
@@ -87,8 +88,6 @@ class OracleClient:
              where=None, order_by=None, flat_mod=None, **_):  # fmt: skip
         if search is not None or where or order_by:
             pytest.skip("oracle mode: unsupported read() options")
-        from pathlib import Path
-
         match = [(k, v) for k, v in __import__("reference").GRIDS.items() if str(v[0]) == str(Path(path))]
         if not match:
             pytest.skip("oracle mode only knows the single-message fixtures")
@@ -104,7 +103,12 @@ class OracleClient:
             if self.bug == "no_lon_wrap":
                 plon = np.where(plon > 180, 1e9, plon)  # nothing sensible comes out of an unwrapped 0..360 longitude
             i, j, d = ref.nearest(plat, wrap180(plon) if self.bug != "no_lon_wrap" else plon)
-            kind = ref.classify_point(plat, plon) if self.bug != "no_lon_wrap" else ["outside" if x > 180 else "inside" for x in plon]
+            kind = (
+                ref.classify_point(plat, plon)
+                if self.bug != "no_lon_wrap"
+                else ["outside" if x > 180 else "inside" for x in plon]
+            )
+
             # Footprint rule: ambiguous points are in the grid unless they sit beyond half a cell off an edge cell
             def _in(k, dd, a_, b_):
                 if k == "inside":
@@ -120,7 +124,9 @@ class OracleClient:
         if bbox is not None:
             lon_min, lat_min, lon_max, lat_max = bbox
             if self.bug == "no_lon_wrap":
-                lon_min, lon_max = wrap180(lon_min) if lon_min <= 180 else 1e9, wrap180(lon_max) if lon_max <= 180 else 1e9
+                lon_min, lon_max = wrap180(lon_min) if lon_min <= 180 else 1e9, (
+                    wrap180(lon_max) if lon_max <= 180 else 1e9
+                )
             mask = ref.box_mask(lon_min, lat_min, lon_max, lat_max)
             if self.bug == "open_bbox_edges":
                 mask &= ref.box_mask(lon_min, lat_min, lon_max, lat_max, eps=-1e-6)

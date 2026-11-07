@@ -161,7 +161,9 @@ def test_longitude_given_as_0_360_equals_minus180_180(name, grid, rg):
                      context=f"{name} shifted by 360")  # fmt: skip
     for other in (b, c):
         assert (a["i"].to_numpy() == other["i"].to_numpy()).all() and (a["j"].to_numpy() == other["j"].to_numpy()).all()
-        np.testing.assert_allclose(a["value"].to_numpy(dtype=float), other["value"].to_numpy(dtype=float), equal_nan=True)
+        np.testing.assert_allclose(
+            a["value"].to_numpy(dtype=float), other["value"].to_numpy(dtype=float), equal_nan=True
+        )
 
 
 def test_alaska_across_the_antimeridian(grid, rg):
@@ -191,7 +193,16 @@ def test_alaska_across_the_antimeridian(grid, rg):
 def test_extreme_but_valid_inputs_do_not_break(name, grid, rg):
     """lat +/-90 and lon -360, 0, 360 are accepted; the answer must agree with the reference classification."""
     ref, path = grid(name)
-    pts = [(90.0, 0.0), (-90.0, 0.0), (90.0, 180.0), (0.0, -360.0), (0.0, 360.0), (0.0, 0.0), (90.0, -360.0), (-90.0, 360.0)]
+    pts = [
+        (90.0, 0.0),
+        (-90.0, 0.0),
+        (90.0, 180.0),
+        (0.0, -360.0),
+        (0.0, 360.0),
+        (0.0, 0.0),
+        (90.0, -360.0),
+        (-90.0, 360.0),
+    ]
     check_points(rg, ref, pts, path=path, context=name)
 
 

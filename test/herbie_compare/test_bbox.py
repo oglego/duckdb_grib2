@@ -19,7 +19,12 @@ def _box_around(ref, i, j, half_cells):
     dlat = max(abs(ref.lat[j2, i] - ref.lat[j1, i]), abs(ref.lat[j, i2] - ref.lat[j, i1])) / 2
     dlon = max(abs(wrap180(ref.lon[j, i2] - ref.lon[j, i1])), abs(wrap180(ref.lon[j2, i] - ref.lon[j1, i]))) / 2
     lat, lon = float(ref.lat[j, i]), float(ref.lon[j, i])
-    return [lon - half_cells * dlon, max(lat - half_cells * dlat, -90.0), lon + half_cells * dlon, min(lat + half_cells * dlat, 90.0)]
+    return [
+        lon - half_cells * dlon,
+        max(lat - half_cells * dlat, -90.0),
+        lon + half_cells * dlon,
+        min(lat + half_cells * dlat, 90.0),
+    ]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -94,7 +99,9 @@ def test_world_box_big_grids(name, grid, rg):
 @pytest.mark.parametrize("name", GRID_NAMES)
 def test_same_box_in_both_longitude_conventions(name, grid, rg):
     ref, path = grid(name)
-    bbox = _box_around(ref, ref.ni // 2, ref.nj // 2, 6.0)
+    # 6.37 cells, not a whole number: on Mercator grids a whole number puts the edges exactly on cell-centre
+    # longitudes, where the three spellings below round differently by one ulp and may disagree about the edge column
+    bbox = _box_around(ref, ref.ni // 2, ref.nj // 2, 6.37)
     a = check_bbox(rg, ref, bbox, path=path, context=f"{name} -180..180")
     shifted = [bbox[0] % 360.0, bbox[1], bbox[2] % 360.0, bbox[3]]
     b = check_bbox(rg, ref, shifted, path=path, context=f"{name} 0..360")
@@ -158,7 +165,9 @@ def test_degenerate_box_on_a_cell_centre_returns_that_cell(name, grid, rg):
     assert (int(pt["i"][0]), int(pt["j"][0])) == (i, j)
     lat, lon = float(pt["lat"][0]), float(pt["lon"][0])
     df = rg.read(path, bbox=[lon, lat, lon, lat])
-    assert [(int(a), int(b)) for a, b in zip(df["i"], df["j"])] == [(i, j)], "a box whose edges pass through a cell centre contains it"
+    assert [(int(a), int(b)) for a, b in zip(df["i"], df["j"])] == [
+        (i, j)
+    ], "a box whose edges pass through a cell centre contains it"
 
 
 @pytest.mark.parametrize("name", ["hi", "pr", "gu"])

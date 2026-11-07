@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import shutil
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -18,79 +19,104 @@ from client import read_grib2_sql, sql_str
 from reference import DATA_DIR, FIXTURE_DIR, GRIDS, MULTI, MULTI_IDX, split_messages
 
 NBM_IDX = FIXTURE_DIR / "blend.t00z.core.f001.co.grib2.idx"
-NBM_FILE_SIZE = 156464859  # size of the original CONUS file in the NBM bucket; the .idx cannot say how long the last message is
+NBM_FILE_SIZE = (
+    156464859  # size of the original CONUS file in the NBM bucket; the .idx cannot say how long the last message is
+)
 REF_DATE = "2026-10-23 00:00"
 
 
-def _herbie_inventory(workdir, grib_path, idx_path):
-    """Lay the files out the way Herbie's NBM template expects and return Herbie's inventory DataFrame."""
-    from herbie import Herbie
-
+def _target(workdir):
     d = workdir / "nbm" / "20261023"
     d.mkdir(parents=True, exist_ok=True)
-    target = d / "blend.t00z.core.f001.co.grib2"
-    if grib_path is None:
-        with open(target, "wb") as f:
-            f.truncate(NBM_FILE_SIZE)  # sparse file: only its size matters
-    else:
-        shutil.copy(grib_path, target)
-    shutil.copy(idx_path, str(target) + ".idx")
+    return d / "blend.t00z.core.f001.co.grib2"
+
+
+def _inventory(workdir):
+    """Herbie's inventory for the grib/.idx pair already placed in Herbie's NBM layout under ``workdir``."""
+    from herbie import Herbie
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         H = Herbie(REF_DATE, model="nbm", product="co", fxx=1, save_dir=workdir, verbose=False)
         assert H.idx_source == "local"
-        return target, H.inventory()
+        return H.inventory()
+
+
+def _build_nbm_case(work):
+    """The real 154-message NBM .idx next to a stand-in data file.
+
+    The extension checks the first message against the file (a sidecar that does not belong to it is an error), so the
+    stand-in starts with a genuine GRIB2 message, the CONUS fixture.  Its length differs from the first message in the
+    real .idx, so every later offset in the .idx is shifted by the difference; Herbie and the extension both read the
+    shifted .idx, so the comparison is unaffected.  The rest of the file is zeros: only its size matters.
+    """
+    first = (FIXTURE_DIR / "nbm_msg.grib2").read_bytes()
+    lines = NBM_IDX.read_text().splitlines()
+    delta = (int(lines[1].split(":")[1]) - int(lines[0].split(":")[1])) - len(first)
+    shifted = []
+    for k, line in enumerate(lines):
+        n, off, rest = line.split(":", 2)
+        shifted.append(f"{n}:{int(off) - (delta if k else 0)}:{rest}")
+    size = NBM_FILE_SIZE - delta
+    target = _target(work)
+    with open(target, "wb") as f:
+        f.write(first)
+        f.truncate(size)
+    Path(str(target) + ".idx").write_text("\n".join(shifted) + "\n")
+    return target, size
 
 
 def _herbie_qualifier(inv):
-    """Herbie splits everything after the forecast field into the columns '?', '??', '???'; rejoin them."""
+    """Herbie splits everything after the forecast field into the columns '?', '??', '???'; rejoin them.
+
+    A line with no qualifier gives the empty string, which is also what the extension returns when a sidecar is
+    present (NULL only means "no sidecar"; see grib2_idx.hpp: "empty when the line has none")."""
     cols = [c for c in ("?", "??", "???") if c in inv]
     out = []
     for row in inv[cols].itertuples(index=False):
-        parts = [x for x in row if isinstance(x, str) and x != ""]
-        out.append(":".join(parts) or None)
+        out.append(":".join(x for x in row if isinstance(x, str) and x != ""))
     return out
-
-
-def _nullable(series):
-    return [x if isinstance(x, str) else None for x in series]
 
 
 @pytest.fixture(scope="module")
 def nbm_idx_case(tmp_path_factory):
     work = tmp_path_factory.mktemp("nbm_idx")
-    target, inv = _herbie_inventory(work, None, NBM_IDX)
-    return target, inv
+    target, size = _build_nbm_case(work)
+    return target, _inventory(work), size
 
 
 @pytest.fixture(scope="module")
 def multi_case(tmp_path_factory):
     work = tmp_path_factory.mktemp("multi")
-    target, inv = _herbie_inventory(work, MULTI, MULTI_IDX)
-    return target, inv
+    target = _target(work)
+    shutil.copy(MULTI, target)
+    shutil.copy(MULTI_IDX, str(target) + ".idx")
+    return target, _inventory(work)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # grib2_index vs Herbie's reading of the .idx
 # ---------------------------------------------------------------------------------------------------------------------
 def test_index_of_the_real_nbm_inventory_matches_herbie(nbm_idx_case, rg):
-    path, inv = nbm_idx_case
+    path, inv, size = nbm_idx_case
     idx = rg.index(str(path))
     assert len(idx) == len(inv) == 154
     assert (idx["message_number"].to_numpy() == inv["grib_message"].to_numpy()).all()
     assert (idx["byte_offset"].to_numpy() == inv["start_byte"].to_numpy()).all()
-    ends = inv["end_byte"].to_numpy(dtype=float)
-    ends[-1] = NBM_FILE_SIZE - 1  # Herbie cannot know the last message's end; the extension uses the file size
+    ends = np.array(inv["end_byte"], dtype=float)  # a writable copy (pandas 3 returns read-only views)
+    ends[-1] = size - 1  # Herbie cannot know the last message's end; the extension uses the file size
     assert ((idx["byte_offset"] + idx["byte_length"] - 1).to_numpy() == ends).all(), "byte ranges differ from Herbie's"
     for ours, theirs in (("variable", "variable"), ("level", "level"), ("forecast", "forecast_time")):
         assert (idx[ours].to_numpy() == inv[theirs].to_numpy()).all(), f"{ours} differs from Herbie's {theirs}"
     assert (idx["inventory"].to_numpy() == inv["search_this"].str.strip(":").to_numpy()).all()
-    assert _nullable(idx["qualifier"]) == _herbie_qualifier(inv)
+    quals = list(idx["qualifier"])
+    assert all(isinstance(q, str) for q in quals), "with a sidecar the qualifier is '' (not NULL) when a line has none"
+    assert quals == _herbie_qualifier(inv)
     assert (pd.to_datetime(idx["reference_time"]) == pd.to_datetime(inv["reference_time"])).all()
 
 
 def test_index_percentile_and_threshold_columns_agree_with_herbie_text(nbm_idx_case, rg):
-    path, inv = nbm_idx_case
+    path, inv, _ = nbm_idx_case
     idx = rg.index(str(path))
     qual = _herbie_qualifier(inv)
     for k, q in enumerate(qual):
@@ -152,7 +178,9 @@ def test_read_metadata_columns_match_herbie(multi_case, refs, rg):
         ref = refs.get(*GRIDS[n][:2])
         sub = df[df["message_number"] == k + 1]
         assert pd.Timestamp(sub["valid_time"].iloc[0]) == ref.valid_time
-        np.testing.assert_allclose(sub["value"].to_numpy(dtype=float), ref.values[int(sub["j"].iloc[0]), int(sub["i"].iloc[0])], rtol=1e-6)
+        np.testing.assert_allclose(
+            sub["value"].to_numpy(dtype=float), ref.values[int(sub["j"].iloc[0]), int(sub["i"].iloc[0])], rtol=1e-6
+        )
 
 
 def test_message_selection(refs, rg):
@@ -187,9 +215,18 @@ def test_search_matches_the_same_messages_as_a_regex_over_herbies_inventory(patt
     path, inv = multi_case
     pts = _multi_points(refs)
     texts = inv["search_this"].str.strip(":").tolist()
-    expect = [n for n, t in zip(inv["grib_message"], texts) if re.search(pattern, t) or re.search(pattern, ":" + t + ":")]
+    expect = [
+        n for n, t in zip(inv["grib_message"], texts) if re.search(pattern, t) or re.search(pattern, ":" + t + ":")
+    ]
     expect = [n for n in expect if n in (1, 2, 3)]  # message 4 is unsupported by read_grib2
-    sql = read_grib2_sql(str(MULTI), search=pattern, message=[1, 2, 3], points=pts, select="DISTINCT message_number", order_by="message_number")
+    sql = read_grib2_sql(
+        str(MULTI),
+        search=pattern,
+        message=[1, 2, 3],
+        points=pts,
+        select="DISTINCT message_number",
+        order_by="message_number",
+    )
     got = [int(x) for x in rg.sql(sql)["message_number"]] if not rg.is_oracle else None
     if got is None:
         pytest.skip("oracle mode")
@@ -213,7 +250,9 @@ def test_files_matched_by_a_glob_come_back_in_path_order(refs, rg):
         ref = refs.get(*GRIDS[key][:2])
         sub = df[df["file_path"] == f]
         assert len(sub) >= 1 and (sub["message_number"] == 1).all()
-        np.testing.assert_allclose(sub["value"].to_numpy(dtype=float), ref.values[sub["j"].astype(int), sub["i"].astype(int)], rtol=1e-6)
+        np.testing.assert_allclose(
+            sub["value"].to_numpy(dtype=float), ref.values[sub["j"].astype(int), sub["i"].astype(int)], rtol=1e-6
+        )
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -229,7 +268,9 @@ def test_grib2_point_value_matches_herbie(name, grid, rg):
     n = 6 if ref.n_cells > 1_000_000 else 25  # the function decodes the whole message per call
     pts = jittered_points(ref, n, seed=21) + [(0.0, 0.0)]
     rows = ", ".join(f"({la!r}::DOUBLE, {lo!r}::DOUBLE)" for la, lo in pts)
-    df = rg.sql(f"SELECT t.lat, t.lon, grib2_point_value(b.content, t.lat, t.lon) AS v FROM read_blob({sql_str(path)}) b, (VALUES {rows}) t(lat, lon)")
+    df = rg.sql(
+        f"SELECT t.lat, t.lon, grib2_point_value(b.content, t.lat, t.lon) AS v FROM read_blob({sql_str(path)}) b, (VALUES {rows}) t(lat, lon)"
+    )
     got = {(round(float(a), 9), round(float(b), 9)): v for a, b, v in zip(df["lat"], df["lon"], df["v"])}
     for la, lo in pts[:-1]:
         i, j, _ = ref.nearest(la, lo)
@@ -257,3 +298,35 @@ def test_eccodes_version_is_reported(rg):
         pytest.skip("scalar functions not emulated by the oracle")
     v = rg.sql("SELECT grib2_eccodes_version() AS v")["v"][0]
     assert re.fullmatch(r"\d+\.\d+\.\d+", v)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# valid_time: reference time + the step in the .idx (NULL without a sidecar)
+# ---------------------------------------------------------------------------------------------------------------------
+def _centre(ref):
+    return (float(ref.lat[ref.nj // 2, ref.ni // 2]), float(ref.lon[ref.nj // 2, ref.ni // 2]))
+
+
+@pytest.mark.parametrize("name", ["co", "co_complex", "ak", "hi", "pr", "gu"])
+def test_valid_time_is_null_without_a_sidecar(name, grid, rg):
+    ref, path = grid(name)
+    assert not Path(path + ".idx").exists()
+    df = rg.read(path, points=[_centre(ref)])
+    assert len(df) == 1 and df["valid_time"].isna().all()
+    assert pd.Timestamp(df["reference_time"][0]) == ref.reference_time, "reference_time comes from the message itself"
+
+
+@pytest.mark.parametrize("name", ["co", "co_complex", "ak", "hi", "pr", "gu", "gu_masked"])
+def test_valid_time_from_a_sidecar_matches_herbie(name, grid, rg, tmp_path):
+    """Give a single message a one-line .idx stating its step; the extension's reference time + step must equal the
+    valid time Herbie derives from the message's own forecast time."""
+    ref, path = grid(name)
+    step = int((ref.valid_time - ref.reference_time).total_seconds() // 3600)
+    copy = tmp_path / "m.grib2"
+    shutil.copy(path, copy)
+    fcst = "anl" if step == 0 else f"{step} hour fcst"
+    Path(str(copy) + ".idx").write_text(f"1:0:d={ref.reference_time:%Y%m%d%H}:VAR:level:{fcst}:\n")
+    df = rg.read(str(copy), points=[_centre(ref)])
+    assert len(df) == 1
+    assert pd.Timestamp(df["valid_time"][0]) == ref.valid_time
+    assert pd.Timestamp(df["reference_time"][0]) == ref.reference_time

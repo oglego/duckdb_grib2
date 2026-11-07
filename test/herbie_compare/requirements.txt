@@ -6,5 +6,6 @@ scikit-learn
 xarray
 cfgrib
 eccodes
+ecmwflibs
 herbie-data
 duckdb

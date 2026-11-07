@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -57,7 +59,13 @@ def assert_cells_match_reference(df: pd.DataFrame, ref: RefField, context: str =
     if "reference_time" in df:
         assert (pd.to_datetime(df["reference_time"]) == ref.reference_time).all(), f"{context}: reference_time"
     if "valid_time" in df:
-        assert (pd.to_datetime(df["valid_time"]) == ref.valid_time).all(), f"{context}: valid_time"
+        # valid_time is reference time + the step read from the .idx (documented), so it is NULL without a sidecar.
+        # With one it must equal Herbie's valid_time.
+        vt = pd.to_datetime(df["valid_time"])
+        if Path(ref.source + ".idx").exists():
+            assert (vt == ref.valid_time).all(), f"{context}: valid_time {vt.iloc[0]} != Herbie's {ref.valid_time}"
+        else:
+            assert vt.isna().all(), f"{context}: valid_time should be NULL without an .idx sidecar, got {vt.iloc[0]}"
 
 
 def check_points(rg, ref: RefField, pts, *, path=None, context: str = "", **read_kwargs) -> pd.DataFrame:
@@ -103,9 +111,9 @@ def check_points(rg, ref: RefField, pts, *, path=None, context: str = "", **read
                     f"the nearest is ({exp_i[n]},{exp_j[n]}) at {float(exp_d[n]):.6f} km"
                 )
             d_row = float(haversine_km(la, lo, ref.lat[rj, ri], ref.lon[rj, ri]))
-            assert abs(float(r["distance_km"]) - d_row) <= max(DIST_TOL_KM, 1e-9 * d_row), (
-                f"{context}: point {n}: distance_km {r['distance_km']} != haversine {d_row}"
-            )
+            assert abs(float(r["distance_km"]) - d_row) <= max(
+                DIST_TOL_KM, 1e-9 * d_row
+            ), f"{context}: point {n}: distance_km {r['distance_km']} != haversine {d_row}"
             kept.append(g)
             g += 1
     assert g == len(rows), f"{context}: {len(rows) - g} unexpected extra rows after the last point"
@@ -124,7 +132,11 @@ def check_bbox(rg, ref: RefField, bbox, *, path=None, context: str = "", **read_
     lon_min, lat_min, lon_max, lat_max = bbox
     strict = ref.box_mask(lon_min, lat_min, lon_max, lat_max, eps=-BOX_EPS_DEG).ravel()
     loose = ref.box_mask(lon_min, lat_min, lon_max, lat_max, eps=+BOX_EPS_DEG).ravel()
-    flat = (df["j"].to_numpy(dtype=np.int64) * ref.ni + df["i"].to_numpy(dtype=np.int64)) if len(df) else np.array([], dtype=np.int64)
+    flat = (
+        (df["j"].to_numpy(dtype=np.int64) * ref.ni + df["i"].to_numpy(dtype=np.int64))
+        if len(df)
+        else np.array([], dtype=np.int64)
+    )
 
     assert len(np.unique(flat)) == len(flat), f"{context}: a cell was returned more than once"
     assert (np.diff(flat) > 0).all(), f"{context}: rows are not in ascending grid order (j * ni + i)"

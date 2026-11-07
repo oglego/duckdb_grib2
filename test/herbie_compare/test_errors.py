@@ -61,7 +61,6 @@ def _expect_error(rg, sql, *fragments):
         ("points := 5", ""),
         ("message := 0, all_cells := true", "start at 1"),
         ("message := -3, all_cells := true", "start at 1"),
-        ("message := NULL, all_cells := true", "cannot be NULL"),
         ("message := 'one', all_cells := true", "message number"),
         ("all_cells := NULL", "cannot be NULL"),
         ("search := '(', all_cells := true", "regular expression"),
@@ -77,7 +76,12 @@ def test_bad_arguments_are_rejected(rg, args, fragment):
 
 def test_nan_and_infinite_coordinates_are_handled(rg):
     """NaN/inf must not hang or crash; an error or an empty result are both fine, a row is not."""
-    for lat, lon in (("'nan'::DOUBLE", "0.0"), ("0.0", "'nan'::DOUBLE"), ("'inf'::DOUBLE", "0.0"), ("0.0", "'-inf'::DOUBLE")):
+    for lat, lon in (
+        ("'nan'::DOUBLE", "0.0"),
+        ("0.0", "'nan'::DOUBLE"),
+        ("'inf'::DOUBLE", "0.0"),
+        ("0.0", "'-inf'::DOUBLE"),
+    ):
         sql = f"SELECT count(*) AS n FROM read_grib2({sql_str(GU)}, points := [{{'lat': {lat}, 'lon': {lon}}}])"
         err = rg.error(sql)
         if err is None:
@@ -170,7 +174,9 @@ def test_concatenated_copies_without_sidecar_are_read_by_header_hopping(rg, refs
     assert sorted(df["message_number"].unique()) == [1, 2, 3]
     for n in (1, 2, 3):
         sub = df[df["message_number"] == n].reset_index(drop=True)
-        np.testing.assert_allclose(sub["value"].to_numpy(dtype=float), ref.values[sub["j"].astype(int), sub["i"].astype(int)], rtol=1e-6)
+        np.testing.assert_allclose(
+            sub["value"].to_numpy(dtype=float), ref.values[sub["j"].astype(int), sub["i"].astype(int)], rtol=1e-6
+        )
     # message selection works on header-hopped files too
     assert sorted(rg.read(str(f), message=2, points=pts)["message_number"].unique()) == [2]
 
@@ -191,3 +197,15 @@ def test_same_file_repeated_in_one_glob_is_read_per_match(rg, tmp_path):
     df = rg.read(str(d / "*.grib2"), points=[(13.818, 147.0361)])
     assert len(df) == 2 and df["file_path"].nunique() == 2
     assert df["value"].nunique() == 1
+
+
+def test_message_null_is_rejected_or_ignored(rg):
+    """The extension rejects message := NULL, but DuckDB may drop NULL named parameters before they reach it.
+    Either an error mentioning NULL, or exactly the unfiltered result, is acceptable; anything else is not."""
+    sql = f"SELECT count(*) AS n FROM read_grib2({sql_str(GU)}, message := NULL, all_cells := true)"
+    err = rg.error(sql)
+    if err is None:
+        base = int(rg.sql(f"SELECT count(*) AS n FROM read_grib2({sql_str(GU)}, all_cells := true)")["n"][0])
+        assert int(rg.sql(sql)["n"][0]) == base
+    else:
+        assert "null" in err.lower()

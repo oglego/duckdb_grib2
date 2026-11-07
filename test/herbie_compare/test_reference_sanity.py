@@ -33,9 +33,9 @@ def test_reference_matches_eccodes_nearest_point(name, grid):
                 continue
             r = ec.codes_grib_find_nearest(h, float(ref.lat[j, i]), float(ref.lon[j, i]) % 360.0)[0]
             assert int(r.index) == j * ref.ni + i, f"cell ({i},{j}): ecCodes says flat index {r.index}"
-            assert abs(float(r.value) - ref.values[j, i]) <= 1e-4 * max(1.0, abs(r.value)), (
-                f"{name} cell ({i},{j}) row parity {j % 2}: ecCodes value {r.value}, reference {ref.values[j, i]}"
-            )
+            assert abs(float(r.value) - ref.values[j, i]) <= 1e-4 * max(
+                1.0, abs(r.value)
+            ), f"{name} cell ({i},{j}) row parity {j % 2}: ecCodes value {r.value}, reference {ref.values[j, i]}"
             checked += 1
             odd_checked += j % 2
     finally:
@@ -94,7 +94,9 @@ def test_box_mask_antimeridian_and_tolerance(grid):
     same = ref.box_mask(170.0, 50.0, 190.0, 70.0)  # same box, 0..360 convention
     assert np.array_equal(m, same)
     assert ref.box_mask(-180, -90, 180, 90).all() and ref.box_mask(0, -90, 360, 90).all()
-    grown, shrunk = ref.box_mask(170.0, 50.0, -170.0, 70.0, eps=1e-3), ref.box_mask(170.0, 50.0, -170.0, 70.0, eps=-1e-3)
+    grown, shrunk = ref.box_mask(170.0, 50.0, -170.0, 70.0, eps=1e-3), ref.box_mask(
+        170.0, 50.0, -170.0, 70.0, eps=-1e-3
+    )
     assert (shrunk <= m).all() and (m <= grown).all()
 
 
