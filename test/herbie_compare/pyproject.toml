@@ -1,0 +1,19 @@
+[project]
+name = "grib2-herbie-compare"
+version = "0.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "xarray",
+    "cfgrib",
+    "eccodes",
+    "ecmwflibs",
+    "herbie-data",
+    "pytest>=7",
+]
+
+[tool.uv]
+package = false   # not an installable package, just an environment

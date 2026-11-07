@@ -1,0 +1,10 @@
+pytest>=7
+numpy
+pandas
+scipy
+scikit-learn
+xarray
+cfgrib
+eccodes
+herbie-data
+duckdb
