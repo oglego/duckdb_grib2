@@ -5,6 +5,7 @@
 #include "grib2_grid.hpp"
 #include "grib2_index_function.hpp"
 #include "grib2_read_function.hpp"
+#include "grib2_settings.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
@@ -127,7 +128,8 @@ inline void Grib2PointValueScalarFun(DataChunk &args, ExpressionState &state, Ve
 }
 
 static void LoadInternal(ExtensionLoader &loader) {
-	// TODO: register grib2_index() and read_grib2() table functions here.
+	RegisterGrib2Settings(loader);
+
 	auto eccodes_version_function =
 	    ScalarFunction("grib2_eccodes_version", {}, LogicalType::VARCHAR, Grib2EccodesVersionScalarFun);
 	loader.RegisterFunction(eccodes_version_function);

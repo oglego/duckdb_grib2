@@ -9,6 +9,13 @@
 
 namespace duckdb {
 
+//! Largest .idx sidecar that is read. A real inventory is tens of kilobytes (about 150 bytes a message); the whole file
+//! is held in memory, so a much larger one is a mistake or an attack, not an inventory.
+constexpr int64_t MAX_IDX_BYTES = 64LL * 1024 * 1024;
+//! Largest single message that is fetched and decoded. NBM messages are a few megabytes; this leaves a wide margin
+//! while stopping a corrupt index or message length from asking for gigabytes at once.
+constexpr int64_t MAX_MESSAGE_BYTES = 1024LL * 1024 * 1024;
+
 //! One row of the message index: where a GRIB message is and what it contains. Which fields are set depends on how
 //! the index was built (see IndexFile); the rest stay empty.
 struct Grib2IndexRow {
@@ -66,7 +73,8 @@ public:
 	}
 
 	std::string ReadAt(int64_t offset, int64_t length) const {
-		if (offset < 0 || length < 0 || offset + length > size) {
+		// Written as a subtraction so that a huge length cannot overflow offset + length
+		if (offset < 0 || length < 0 || offset > size || length > size - offset) {
 			throw IOException(path + ": cannot read " + std::to_string(length) + " bytes at offset " +
 			                  std::to_string(offset) + " (the file is " + std::to_string(size) + " bytes)");
 		}

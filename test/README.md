@@ -28,3 +28,19 @@ Tests use paths relative to the repository root, so run them from there.
 ```bash
 ./build/release/test/unittest "test/*"
 ```
+
+## Robustness and fuzzing
+
+`test/cpp/robustness_check.cpp` throws truncated, bit-flipped and random input at the `.idx` parser, the section-header
+parser and the grid validation, and is meant to be built with the sanitizers so any memory error fails the run:
+
+```bash
+g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -I src/include \
+    test/cpp/robustness_check.cpp -o /tmp/robustness_check && /tmp/robustness_check
+```
+
+`test/fuzz/` holds libFuzzer targets for the same two parsers (build lines are in each file). CI runs both: the
+robustness check on every push, and a 45-second fuzz run of each parser.
+
+These cover the parsers in this repository only. ecCodes itself, which decodes every message, is not fuzzed here; see
+"Untrusted input" in the README.

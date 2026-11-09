@@ -10,6 +10,7 @@
 // ecCodes linked through vcpkg
 #include <eccodes.h>
 
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -151,6 +152,15 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 	const double dx = Grib2DoubleKey(h, "DxInMetres", function);
 	const double dy = Grib2DoubleKey(h, "DyInMetres", function);
 	const double radius = Grib2DoubleKey(h, "radius", function);
+	// A polar stereographic grid may be true at the pole itself; the cone and cylinder projections cannot
+	const double max_lad = grid_type == "polar_stereographic" ? 90.0 : 89.999999;
+	if (!std::isfinite(lad) || std::fabs(lad) > max_lad) {
+		throw InvalidInputException(std::string(function) + ": the latitude where the grid is true (LaD) is not valid");
+	}
+	std::string grid_error;
+	if (!ValidateGridParameters(ni, nj, la1, lo1, dx, dy, radius, grid_error)) {
+		throw InvalidInputException(std::string(function) + ": " + grid_error);
+	}
 
 	Grib2Grid result;
 	result.alternative_rows = Grib2LongKeyOrDefault(h, "alternativeRowScanning", 0) != 0;
@@ -161,6 +171,12 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 		const double lov = Grib2DoubleKey(h, "LoVInDegrees", function);
 		const double latin1 = Grib2DoubleKey(h, "Latin1InDegrees", function);
 		const double latin2 = Grib2DoubleKey(h, "Latin2InDegrees", function);
+		// Both standard parallels at the equator would make the cone constant zero (a cylinder, not a cone)
+		if (!std::isfinite(lov) || !std::isfinite(latin1) || !std::isfinite(latin2) || std::fabs(latin1) >= 90.0 ||
+		    std::fabs(latin2) >= 90.0 || (latin1 == 0.0 && latin2 == 0.0)) {
+			throw InvalidInputException(std::string(function) +
+			                            ": the Lambert conformal standard parallels or orientation are not valid");
+		}
 		result.fingerprint += StringUtil::Format("|%.17g|%.17g|%.17g", lov, latin1, latin2);
 		result.grid = std::make_unique<LambertGrid>(ni, nj, la1, lo1, lad, lov, latin1, latin2, dx, dy, radius);
 	} else if (grid_type == "polar_stereographic") {

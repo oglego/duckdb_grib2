@@ -439,3 +439,42 @@ fixtures/nbm_ak_msg.grib2	1	275.700
 fixtures/nbm_gu_msg.grib2	1	969.000
 fixtures/nbm_hi_msg.grib2	1	298.900
 fixtures/nbm_pr_msg.grib2	1	308.000
+
+# --- Hardening ---------------------------------------------------------------------------------------------------
+
+# A very long search pattern is refused before it is compiled
+statement error
+SELECT * FROM read_grib2('test/data/multi.grib2', search := repeat('a', 2000), all_cells := true);
+----
+search is longer than
+
+# grib2_io_threads: a bad value is rejected when it is set
+statement error
+SET grib2_io_threads = 0;
+----
+grib2_io_threads must be between 1 and 64
+
+statement error
+SET grib2_io_threads = 65;
+----
+grib2_io_threads must be between 1 and 64
+
+# With background threads turned off, every read happens on the query thread and the results are identical
+statement ok
+SET grib2_io_threads = 1;
+
+query TIR
+SELECT file_path, message_number, round(value, 1) FROM read_grib2('fixtures/nbm_??_msg.grib2', points := [{'lat': 58.0874, 'lon': -154.1681}, {'lat': 13.818, 'lon': 147.0361}, {'lat': 22.005, 'lon': -154.4903}, {'lat': 17.7425, 'lon': -66.4248}]);
+----
+fixtures/nbm_ak_msg.grib2	1	275.700
+fixtures/nbm_gu_msg.grib2	1	969.000
+fixtures/nbm_hi_msg.grib2	1	298.900
+fixtures/nbm_pr_msg.grib2	1	308.000
+
+query I
+SELECT count(*) FROM grib2_index('fixtures/nbm_??_msg.grib2');
+----
+4
+
+statement ok
+SET grib2_io_threads = 8;

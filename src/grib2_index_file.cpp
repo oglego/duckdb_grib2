@@ -11,6 +11,7 @@
 #include <atomic>
 #include <exception>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -106,6 +107,11 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 	if (idx_file) {
 		std::vector<IdxEntry> entries;
 		std::string error;
+		if (idx_file->size > MAX_IDX_BYTES) {
+			throw InvalidInputException(idx_path + ": the file is " + std::to_string(idx_file->size) +
+			                            " bytes, which is too large for an .idx inventory (limit " +
+			                            std::to_string(MAX_IDX_BYTES) + ")");
+		}
 		if (!ParseIdx(idx_file->ReadAt(0, idx_file->size), file.size, entries, error)) {
 			throw InvalidInputException(idx_path + ": " + error);
 		}
@@ -200,19 +206,21 @@ std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::ve
 		}
 	};
 
-	const size_t workers = details ? 1 : std::min<size_t>(max_parallel, paths.size());
-	if (workers <= 1) {
-		work();
-	} else {
-		// The calling thread takes part, so one fewer thread is started
-		std::vector<std::thread> threads;
-		for (size_t t = 1; t < workers; t++) {
+	const size_t workers = details ? 1 : std::max<size_t>(1, std::min<size_t>(max_parallel, paths.size()));
+	// The calling thread takes part, so one fewer thread is started. If the system refuses to start a thread (limits,
+	// memory), carry on with the threads that did start rather than letting std::system_error escape while joinable
+	// threads are alive, which would call std::terminate.
+	std::vector<std::thread> threads;
+	for (size_t t = 1; t < workers; t++) {
+		try {
 			threads.emplace_back(work);
+		} catch (const std::system_error &) {
+			break;
 		}
-		work();
-		for (auto &thread : threads) {
-			thread.join();
-		}
+	}
+	work();
+	for (auto &thread : threads) {
+		thread.join();
 	}
 	for (const auto &error : errors) {
 		if (error) {

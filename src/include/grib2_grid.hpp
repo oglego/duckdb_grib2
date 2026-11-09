@@ -13,9 +13,43 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace duckdb {
+
+//! Largest grid (ni * nj) accepted. A decoded message is held in memory as doubles, so this bounds a single message at
+//! about 2 GB and also keeps ni * nj well inside int64 arithmetic. NBM CONUS is 3.7 million cells.
+constexpr int64_t MAX_GRID_CELLS = 250000000;
+
+//! Check the numbers read from a message's grid definition before building a grid from them. A corrupt or hostile
+//! message could otherwise give zero or negative spacing (division by zero), NaN, or a huge grid.
+//! Returns false and sets `error` when a value is not usable.
+inline bool ValidateGridParameters(int64_t ni, int64_t nj, double la1_deg, double lo1_deg, double dx_m, double dy_m,
+                                   double radius_m, std::string &error) {
+	if (ni < 1 || nj < 1) {
+		error = "the grid has no cells (Ni = " + std::to_string(ni) + ", Nj = " + std::to_string(nj) + ")";
+		return false;
+	}
+	if (ni > MAX_GRID_CELLS / nj) {
+		error = "the grid is too large (" + std::to_string(ni) + " x " + std::to_string(nj) + " cells; the limit is " +
+		        std::to_string(MAX_GRID_CELLS) + ")";
+		return false;
+	}
+	if (!std::isfinite(la1_deg) || la1_deg < -90.0 || la1_deg > 90.0 || !std::isfinite(lo1_deg)) {
+		error = "the first grid point is not a valid latitude and longitude";
+		return false;
+	}
+	if (!std::isfinite(dx_m) || !std::isfinite(dy_m) || dx_m <= 0.0 || dy_m <= 0.0) {
+		error = "the grid spacing must be a positive number of metres";
+		return false;
+	}
+	if (!std::isfinite(radius_m) || radius_m <= 0.0) {
+		error = "the earth radius must be a positive number of metres";
+		return false;
+	}
+	return true;
+}
 
 struct GridCell {
 	int64_t i;

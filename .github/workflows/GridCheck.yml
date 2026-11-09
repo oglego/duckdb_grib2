@@ -3,6 +3,9 @@
 # committed under test/data/.
 #   grid_check: src/include/grib2_grid.hpp (projections, nearest cell, boxes)
 #   idx_check:  src/include/grib2_idx.hpp and grib2_message.hpp (.idx parser, section headers)
+#   robustness_check: the same parsers and the grid validation on truncated, mutated and random input, built with
+#               AddressSanitizer and UndefinedBehaviorSanitizer so a memory error fails the run
+#   fuzz:       a short libFuzzer run of each parser (the checks above are deterministic; this explores further)
 #
 name: Standalone C++ Checks
 on:
@@ -24,3 +27,27 @@ jobs:
         run: g++ -std=c++17 -O2 -Wall -Wextra -I src/include test/cpp/idx_check.cpp -o idx_check
       - name: Run idx check
         run: ./idx_check
+      - name: Build robustness check (ASan + UBSan)
+        run: >
+          g++ -std=c++17 -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all
+          -I src/include test/cpp/robustness_check.cpp -o robustness_check
+      - name: Run robustness check
+        run: ./robustness_check
+
+  fuzz:
+    name: Short fuzz run of the parsers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build fuzz targets
+        run: |
+          clang++ -std=c++17 -g -O1 -fsanitize=fuzzer,address,undefined -I src/include test/fuzz/fuzz_idx.cpp -o fuzz_idx
+          clang++ -std=c++17 -g -O1 -fsanitize=fuzzer,address,undefined -I src/include test/fuzz/fuzz_sections.cpp -o fuzz_sections
+      - name: Fuzz the .idx parser
+        run: |
+          mkdir -p corpus_idx && cp fixtures/*.idx test/data/*.idx corpus_idx/
+          ./fuzz_idx -max_total_time=45 -timeout=10 corpus_idx
+      - name: Fuzz the section parser
+        run: |
+          mkdir -p corpus_sections && cp test/data/*.grib2 corpus_sections/
+          ./fuzz_sections -max_total_time=45 -timeout=10 corpus_sections

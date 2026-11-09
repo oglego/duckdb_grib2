@@ -139,6 +139,45 @@ once and fetches the next few messages while it decodes the current one.
 - **Tested data:** NBM CONUS, Alaska, Hawaii, Puerto Rico and Guam, forecast hour 1 of the core product. Other sources, such
   as HRRR (also Lambert conformal), should work but have not been tried.
 
+## Settings, limits and untrusted input
+
+```sql
+SET grib2_io_threads = 8;   -- default 8, range 1 to 64
+```
+
+`grib2_index` and `read_grib2` overlap network round trips by reading from a few background threads. They call DuckDB's
+file system from those threads rather than from DuckDB's own. If a filesystem extension misbehaves under that, or the
+environment restricts thread creation, `SET grib2_io_threads = 1` keeps every read on the query's thread (slower on
+remote files, same results).
+
+Limits, each reported as an error that names the file and message:
+
+| Limit | Value |
+|---|---|
+| `.idx` file size | 64 MiB |
+| One message | 1 GiB |
+| Grid size (`Ni x Nj`) | 250 million cells |
+| `search` pattern length | 1024 characters |
+| Message bytes held in flight by prefetching | 128 MiB (at least one message) |
+
+Grid definitions are validated before use: non-positive spacing, a non-finite coordinate or earth radius, or a grid over
+the limit is refused instead of producing wrong or non-finite coordinates.
+
+**Untrusted input.** The `.idx` and section-header parsers are covered by sanitizer and fuzz runs in CI. The decoding
+itself is done by ecCodes, which parses the whole message and has had memory-safety bugs fixed in the past; it is not
+fuzzed here. Read files you trust, or run DuckDB where a crash is contained, when the source of the GRIB2 data is not
+under your control. A malformed message produces an error in most cases, but that is not a guarantee against a crash in
+ecCodes.
+
+Other things to know:
+
+- URLs with a query string (for example presigned S3 URLs) are not given a sidecar lookup: `.idx` is appended to the
+  whole string, so the inventory is not found and `search` is unavailable. Use `message := ...` there.
+- With a bitmap, a cell whose decoded value is exactly the message's missing-value marker (9999 unless the message says
+  otherwise) is returned as NULL.
+- Errors from reading a file (network, permissions) keep their DuckDB error type and name the file and message number.
+- `read_grib2` reads and decodes on one thread; query cancellation is honoured between messages.
+
 ## Performance
 
 Measured on an 8-core Apple silicon Mac, from the author's network, on the real NBM CONUS file:

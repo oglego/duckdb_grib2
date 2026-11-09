@@ -4,6 +4,7 @@
 #include "grib2_grid.hpp"
 #include "grib2_index_file.hpp"
 #include "grib2_message.hpp"
+#include "grib2_settings.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -15,6 +16,7 @@
 #include <future>
 #include <regex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 // read_grib2(path, message := ..., search := ..., points := ..., bbox := ..., all_cells := false)
@@ -34,6 +36,9 @@
 namespace duckdb {
 
 namespace {
+
+//! Longest regular expression accepted by search
+constexpr size_t MAX_SEARCH_PATTERN_LENGTH = 1024;
 
 enum class SpatialMode { POINTS, BBOX, ALL_CELLS };
 
@@ -149,8 +154,14 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 		} else if (parameter.first == "search") {
 			result->has_search = true;
 			result->search = StringValue::Get(value);
+			// std::regex is a backtracking engine: bound the pattern so a query cannot pin a core for minutes
+			if (result->search.size() > MAX_SEARCH_PATTERN_LENGTH) {
+				throw InvalidInputException("read_grib2: search is longer than " +
+				                            std::to_string(MAX_SEARCH_PATTERN_LENGTH) + " characters");
+			}
 			try {
-				std::regex check(result->search, std::regex::ECMAScript);
+				const std::regex check(result->search, std::regex::ECMAScript);
+				(void)check;
 			} catch (const std::regex_error &error) {
 				throw InvalidInputException("read_grib2: search is not a valid regular expression: " +
 				                            std::string(error.what()));
@@ -213,6 +224,14 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 
 //! How many messages are fetched ahead of the one being decoded
 constexpr idx_t PREFETCH_MESSAGES = 6;
+//! Upper bound on the bytes of messages held in flight, so large messages cannot multiply memory use by the prefetch
+//! depth. At least one message is always in flight, whatever its size.
+constexpr int64_t PREFETCH_BYTE_BUDGET = 128LL * 1024 * 1024;
+
+struct PendingFetch {
+	std::future<std::string> bytes;
+	int64_t length;
+};
 
 struct PointHit {
 	idx_t point_index;
@@ -241,8 +260,12 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	FileSystem *fs = nullptr;
 	//! Messages whose bytes are being fetched in the background, in message order. Fetching is waiting for round trips,
 	//! so it overlaps with decoding; decoding itself stays on the scanning thread, which keeps row order deterministic.
-	std::deque<std::future<std::string>> pending;
+	std::deque<PendingFetch> pending;
+	int64_t pending_bytes = 0;
 	idx_t prefetch_next = 0;
+	//! std::launch::async when background threads are allowed (grib2_io_threads > 1); deferred runs each fetch on the
+	//! scanning thread when it is needed
+	std::launch fetch_policy = std::launch::async;
 
 	// The message currently being emitted
 	bool loaded = false;
@@ -268,6 +291,7 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	std::sort(files.begin(), files.end(), [](const OpenFileInfo &a, const OpenFileInfo &b) { return a.path < b.path; });
 
 	state->fs = &fs;
+	state->fetch_policy = Grib2IoThreads(context) > 1 ? std::launch::async : std::launch::deferred;
 
 	std::regex search;
 	if (bind_data.has_search) {
@@ -279,10 +303,10 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	}
 	// Each message is validated as it is read, so the up-front check of the first message is skipped. Files are indexed
 	// several at a time; the results come back in path order.
-	for (auto &rows : IndexFiles(fs, paths, true, false, false, 8)) {
+	const std::unordered_set<int64_t> wanted(bind_data.messages.begin(), bind_data.messages.end());
+	for (auto &rows : IndexFiles(fs, paths, true, false, false, Grib2IoThreads(context))) {
 		for (auto &row : rows) {
-			if (!bind_data.messages.empty() && std::find(bind_data.messages.begin(), bind_data.messages.end(),
-			                                             row.message_number) == bind_data.messages.end()) {
+			if (!wanted.empty() && wanted.find(row.message_number) == wanted.end()) {
 				continue;
 			}
 			if (bind_data.has_search) {
@@ -298,6 +322,12 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 					continue;
 				}
 			}
+			if (row.byte_length > MAX_MESSAGE_BYTES) {
+				throw InvalidInputException(
+				    "read_grib2: " + row.file_path + ": message " + std::to_string(row.message_number) + " is " +
+				    std::to_string(row.byte_length) + " bytes, above the limit of " +
+				    std::to_string(MAX_MESSAGE_BYTES) + " (does the .idx belong to this file?)");
+			}
 			state->messages.push_back(std::move(row));
 		}
 	}
@@ -308,14 +338,23 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 //! Start fetching the bytes of upcoming messages, keeping a few in flight
 void FillPrefetch(Grib2ReadGlobalState &state) {
 	while (state.pending.size() < PREFETCH_MESSAGES && state.prefetch_next < state.messages.size()) {
-		const Grib2IndexRow &row = state.messages[state.prefetch_next++];
+		const Grib2IndexRow &row = state.messages[state.prefetch_next];
+		if (!state.pending.empty() && state.pending_bytes + row.byte_length > PREFETCH_BYTE_BUDGET) {
+			break;
+		}
+		state.prefetch_next++;
 		FileSystem *fs = state.fs;
-		state.pending.push_back(std::async(
-		    std::launch::async, [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
-			    // Each fetch opens its own handle: concurrent reads on one remote handle are not something to rely on
-			    const FileReader reader(*fs, path);
-			    return reader.ReadAt(offset, length);
-		    }));
+		PendingFetch fetch;
+		fetch.length = row.byte_length;
+		fetch.bytes = std::async(state.fetch_policy,
+		                         [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
+			                         // Each fetch opens its own handle: concurrent reads on one remote handle are not
+			                         // something to rely on
+			                         const FileReader reader(*fs, path);
+			                         return reader.ReadAt(offset, length);
+		                         });
+		state.pending_bytes += row.byte_length;
+		state.pending.push_back(std::move(fetch));
 	}
 }
 
@@ -324,8 +363,11 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 	const char *function = "read_grib2";
 	const Grib2IndexRow &row = state.messages[state.message_position];
 	try {
+		// Decoding is the slow step; give a cancelled query the chance to stop before the next one starts
+		context.InterruptCheck();
 		FillPrefetch(state);
-		const std::string bytes = state.pending.front().get();
+		const std::string bytes = state.pending.front().bytes.get();
+		state.pending_bytes -= state.pending.front().length;
 		state.pending.pop_front();
 		FillPrefetch(state);
 		// Without the up-front check, this is what notices an .idx that does not belong to the file
@@ -391,9 +433,14 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 		state.loaded = true;
 	} catch (std::exception &error) {
 		// what() of a DuckDB exception is JSON; the plain message reads better
+		// Keep the original kind of error (IO, out of memory, interrupt, not implemented): everything arriving here
+		// used to be reported as invalid input, which hid real failures such as a dropped connection. Errors without
+		// a DuckDB type (INVALID) are still reported as invalid input.
 		const ErrorData details(error);
-		throw InvalidInputException(row.file_path + ": message " + std::to_string(row.message_number) + ": " +
-		                            details.RawMessage());
+		const ExceptionType type =
+		    details.Type() == ExceptionType::INVALID ? ExceptionType::INVALID_INPUT : details.Type();
+		throw Exception(type, row.file_path + ": message " + std::to_string(row.message_number) + ": " +
+		                          details.RawMessage());
 	}
 }
 
