@@ -12,12 +12,19 @@
 // Deliberately free of DuckDB and ecCodes dependencies so it can be unit tested on its own
 // (see test/cpp/idx_check.cpp).
 
+#include "grib2_grid.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
 
 namespace duckdb {
+
+//! Longest message length accepted from an indicator section. The field is 64 bits, and a hostile or corrupt value of
+//! 2^63 or more turns negative when stored in an int64_t, which makes "offset + length" wrap and lets a file send the
+//! reader backwards forever. 2^62 is far beyond any real message and keeps all offset arithmetic in range.
+constexpr uint64_t MAX_MESSAGE_LENGTH_FIELD = 1ULL << 62;
 
 struct MessageSummary {
 	int edition = 0;
@@ -115,7 +122,37 @@ inline SectionParseResult ParseIndicator(const uint8_t *data, size_t size, Messa
 		error = "message length " + std::to_string(out.total_length) + " is too small";
 		return SectionParseResult::INVALID;
 	}
+	if (out.total_length > MAX_MESSAGE_LENGTH_FIELD) {
+		error = "message length " + std::to_string(out.total_length) + " is not plausible";
+		return SectionParseResult::INVALID;
+	}
 	return SectionParseResult::OK;
+}
+
+//! The length of the message at `offset` in a file of `file_size` bytes, for walking a file with no .idx. The message
+//! must fit in the rest of the file, and since it is at least 20 bytes long (checked by the indicator parser) every
+//! step moves forward, so the walk always ends. Returns false and sets `error` when the message does not fit.
+inline bool MessageLengthWithinFile(uint64_t total_length, int64_t offset, int64_t file_size, int64_t &length,
+                                    std::string &error) {
+	if (offset < 0 || offset > file_size || total_length < 20 ||
+	    total_length > static_cast<uint64_t>(file_size - offset)) {
+		error = "the file ends inside this message (truncated?)";
+		return false;
+	}
+	length = static_cast<int64_t>(total_length);
+	return true;
+}
+
+//! Refuse messages that claim more grid or data points than the extension will decode. ecCodes sizes its buffers from
+//! these counts, so a corrupt or hostile count must be stopped before the message reaches it.
+inline bool CheckMessageCounts(const MessageSummary &summary, std::string &error) {
+	if (static_cast<int64_t>(summary.grid_points) > MAX_GRID_CELLS ||
+	    static_cast<int64_t>(summary.data_points) > MAX_GRID_CELLS) {
+		error = "the message claims " + std::to_string(summary.grid_points) + " grid points and " +
+		        std::to_string(summary.data_points) + " data points; the limit is " + std::to_string(MAX_GRID_CELLS);
+		return false;
+	}
+	return true;
 }
 
 //! Describe the first field of a message from a prefix of its bytes. Returns NEED_MORE with the number of bytes

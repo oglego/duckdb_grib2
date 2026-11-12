@@ -159,6 +159,9 @@ Limits, each reported as an error that names the file and message:
 | Grid size (`Ni x Nj`) | 250 million cells |
 | `search` pattern length | 1024 characters |
 | Message bytes held in flight by prefetching | 128 MiB (at least one message) |
+| Grid or data points a message may claim (checked before ecCodes sees it) | 250 million |
+| Message length field | 2^62 (far above any real message; larger is refused) |
+| Forecast step read from an `.idx` line | 0 to 1,000,000 hours (otherwise `valid_time` is NULL) |
 
 Grid definitions are validated before use: non-positive spacing, a non-finite coordinate or earth radius, or a grid over
 the limit is refused instead of producing wrong or non-finite coordinates.
@@ -173,6 +176,9 @@ Other things to know:
 
 - URLs with a query string (for example presigned S3 URLs) are not given a sidecar lookup: `.idx` is appended to the
   whole string, so the inventory is not found and `search` is unavailable. Use `message := ...` there.
+- A file with no `.idx` is walked message by message. Each message must fit in the rest of the file and be at least 20
+  bytes, so the walk always moves forward and ends; a message whose length runs past the end is reported as truncated.
+- `message := []` (an empty list) is an error. Leave `message` out to read every message.
 - With a bitmap, a cell whose decoded value is exactly the message's missing-value marker (9999 unless the message says
   otherwise) is returned as NULL.
 - Errors from reading a file (network, permissions) keep their DuckDB error type and name the file and message number.

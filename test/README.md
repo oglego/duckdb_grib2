@@ -42,5 +42,9 @@ g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -I 
 `test/fuzz/` holds libFuzzer targets for the same two parsers (build lines are in each file). CI runs both: the
 robustness check on every push, and a 45-second fuzz run of each parser.
 
+The robustness check also holds regression tests for bugs found in review: a message length of 2^63 or more that sent the
+no-`.idx` walk backwards forever, an `.idx` forecast step large enough to overflow `valid_time`, and point counts large
+enough to size a huge allocation. Each one was confirmed to fail with its fix removed.
+
 These cover the parsers in this repository only. ecCodes itself, which decodes every message, is not fuzzed here; see
 "Untrusted input" in the README.

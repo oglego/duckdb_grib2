@@ -168,9 +168,9 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 		if (!ReadSections(file, offset, -1, summary, prefix, error)) {
 			ThrowBadMessage(path, number, offset, error);
 		}
-		const int64_t length = static_cast<int64_t>(summary.total_length);
-		if (offset + length > file.size) {
-			ThrowBadMessage(path, number, offset, "the file ends inside this message (truncated?)");
+		int64_t length = 0;
+		if (!MessageLengthWithinFile(summary.total_length, offset, file.size, length, error)) {
+			ThrowBadMessage(path, number, offset, error);
 		}
 		Grib2IndexRow row;
 		row.file_path = path;

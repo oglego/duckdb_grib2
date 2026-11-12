@@ -3,6 +3,7 @@
 // Small helpers around the ecCodes C API shared by the extension's functions.
 
 #include "grib2_grid.hpp"
+#include "grib2_message.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -67,6 +68,16 @@ inline CodesHandlePtr OpenGribMessage(const char *function, const char *data, id
 	if (size < 16 || std::memcmp(data, "GRIB", 4) != 0) {
 		throw InvalidInputException(std::string(function) + ": input is not a valid GRIB message");
 	}
+	// Stop corrupt or hostile point counts here: ecCodes sizes its own buffers from them. Messages this parser cannot
+	// read are left to ecCodes, which reports them.
+	MessageSummary summary;
+	size_t needed = 0;
+	std::string screen_error;
+	if (ParseMessageSections(reinterpret_cast<const uint8_t *>(data), static_cast<size_t>(size), summary, needed,
+	                         screen_error) == SectionParseResult::OK &&
+	    !CheckMessageCounts(summary, screen_error)) {
+		throw InvalidInputException(std::string(function) + ": " + screen_error);
+	}
 	// The _copy variant makes ecCodes own its buffer, so the DuckDB vector data can be released safely.
 	CodesHandlePtr handle(codes_handle_new_from_message_copy(nullptr, data, static_cast<size_t>(size)));
 	if (!handle) {
@@ -80,6 +91,11 @@ inline std::vector<double> DecodeGribValues(codes_handle *handle, const char *fu
 	size_t value_count = 0;
 	if (codes_get_size(handle, "values", &value_count) != CODES_SUCCESS) {
 		throw InvalidInputException(std::string(function) + ": could not determine the number of values");
+	}
+	// Checked before the allocation: the count comes from the message
+	if (value_count > static_cast<size_t>(MAX_GRID_CELLS)) {
+		throw InvalidInputException(std::string(function) + ": the message has " + std::to_string(value_count) +
+		                            " values; the limit is " + std::to_string(MAX_GRID_CELLS));
 	}
 	std::vector<double> values(value_count);
 	if (value_count > 0 && codes_get_double_array(handle, "values", values.data(), &value_count) != CODES_SUCCESS) {

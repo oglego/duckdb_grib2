@@ -444,7 +444,7 @@ fixtures/nbm_pr_msg.grib2	1	308.000
 
 # A very long search pattern is refused before it is compiled
 statement error
-SELECT * FROM read_grib2('test/data/multi.grib2', search := repeat('a', 2000), all_cells := true);
+SELECT * FROM read_grib2('fixtures/nbm_ak_msg.grib2', search := repeat('a', 2000), all_cells := true);
 ----
 search is longer than
 
@@ -478,3 +478,9 @@ SELECT count(*) FROM grib2_index('fixtures/nbm_??_msg.grib2');
 
 statement ok
 SET grib2_io_threads = 8;
+
+# An empty message list is an error, not "read every message"
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_ak_msg.grib2', message := [], all_cells := true);
+----
+message is an empty list

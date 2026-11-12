@@ -75,6 +75,10 @@ std::vector<int64_t> ParseMessages(const Value &value) {
 	} else {
 		items.push_back(value);
 	}
+	if (items.empty()) {
+		// An empty list would otherwise mean "no filter" and silently read every message
+		throw InvalidInputException("read_grib2: message is an empty list; leave it out to read every message");
+	}
 	for (const Value &item : items) {
 		if (item.IsNull() || !item.type().IsIntegral()) {
 			throw InvalidInputException("read_grib2: message must be a message number or a list of message numbers");

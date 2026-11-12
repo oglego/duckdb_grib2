@@ -187,6 +187,132 @@ int main() {
 		}
 	}
 
+	// --- Regressions: hostile lengths, steps and counts -------------------------------------------------------------
+	// These reproduce bugs found in review. Each one failed before its fix (an endless walk that grew memory without
+	// bound, a signed overflow, an allocation sized by the message), so they stay here to keep it from coming back.
+	{
+		const std::string a = ReadFile("fixtures/nbm_ak_msg.grib2");
+		CHECK(a.size() > 100);
+
+		const auto with_length = [](std::string message, uint64_t length) {
+			for (int k = 0; k < 8; k++) {
+				message[8 + k] = static_cast<char>((length >> (56 - 8 * k)) & 0xff);
+			}
+			return message;
+		};
+		const auto indicator_result = [](const std::string &message) {
+			MessageSummary summary;
+			size_t needed = 0;
+			std::string err;
+			return ParseIndicator(reinterpret_cast<const uint8_t *>(message.data()), message.size(), summary, needed,
+			                      err);
+		};
+		// Walk a file the way IndexFile() does without an .idx. Returns the number of messages found, or -1 when the
+		// walk stopped with an error. Gives up after `cap` steps so a walk that never ends is reported, not run.
+		const auto walk = [](const std::string &file, int cap) {
+			const int64_t size = static_cast<int64_t>(file.size());
+			int64_t offset = 0;
+			int count = 0;
+			while (offset < size) {
+				if (count >= cap) {
+					return -2; // did not end
+				}
+				const std::string prefix = file.substr(static_cast<size_t>(offset), 512);
+				MessageSummary summary;
+				size_t needed = 0;
+				std::string err;
+				if (ParseMessageSections(reinterpret_cast<const uint8_t *>(prefix.data()), prefix.size(), summary,
+				                         needed, err) != SectionParseResult::OK) {
+					return -1;
+				}
+				int64_t length = 0;
+				if (!MessageLengthWithinFile(summary.total_length, offset, size, length, err)) {
+					return -1;
+				}
+				if (offset + length > size || length < 20) {
+					return -3; // the helper let an impossible length through
+				}
+				count++;
+				offset += length;
+			}
+			return count;
+		};
+
+		// A normal two-message file walks to the end
+		CHECK(walk(a + a, 10) == 2);
+
+		// Lengths of 2^63 and above used to turn negative; 2^62 + 1 and above are not plausible either
+		const uint64_t hostile[] = {1ULL << 63, (1ULL << 63) + 1, (1ULL << 62) + 1,
+		                            ~0ULL,      ~0ULL - 1,        0 - static_cast<uint64_t>(a.size())};
+		for (uint64_t length : hostile) {
+			CHECK(indicator_result(with_length(a, length)) == SectionParseResult::INVALID);
+			// The original bug: a second message whose length sends the walk back to the start
+			CHECK(walk(a + with_length(a, length), 10) == -1);
+			CHECK(walk(with_length(a, length), 10) == -1);
+		}
+		CHECK(walk(a + with_length(a, a.size() + 1), 10) == -1); // runs past the end of the file
+		CHECK(walk(a + with_length(a, 19), 10) == -1);           // too short to be a message
+
+		// Any 64-bit length in either message: the walk must end, with an error or at the end of the file
+		for (int round = 0; round < 20000; round++) {
+			const uint64_t length = rng();
+			const std::string file = (rng() & 1) ? a + with_length(a, length) : with_length(a, length) + a;
+			CHECK(walk(file, 10) != -2 && walk(file, 10) != -3);
+		}
+
+		// Helper edge cases
+		int64_t length = 0;
+		std::string err;
+		CHECK(MessageLengthWithinFile(100, 0, 100, length, err) && length == 100);
+		CHECK(!MessageLengthWithinFile(101, 0, 100, length, err));
+		CHECK(!MessageLengthWithinFile(100, 1, 100, length, err));
+		CHECK(!MessageLengthWithinFile(19, 0, 100, length, err));
+		CHECK(!MessageLengthWithinFile(100, -1, 100, length, err));
+		CHECK(!MessageLengthWithinFile(100, 101, 100, length, err));
+		CHECK(!MessageLengthWithinFile(~0ULL, 0, std::numeric_limits<int64_t>::max(), length, err));
+
+		// Forecast steps from an .idx: bounded, so converting to microseconds cannot overflow
+		const auto step_of = [](const std::string &forecast) {
+			IdxEntry entry;
+			std::string error;
+			const bool ok = ParseIdxLine("1:0:d=2026102300:TMP:2 m above ground:" + forecast + ":", entry, error);
+			return ok ? entry.step_hours : std::optional<int64_t>();
+		};
+		CHECK(step_of("anl") == std::optional<int64_t>(0));
+		CHECK(step_of("0 hour fcst") == std::optional<int64_t>(0));
+		CHECK(step_of("18 hour fcst") == std::optional<int64_t>(18));
+		CHECK(step_of("1000000 hour fcst") == std::optional<int64_t>(IDX_MAX_STEP_HOURS));
+		CHECK(!step_of("1000001 hour fcst").has_value());
+		CHECK(!step_of("9223372036854775807 hour fcst").has_value());
+		CHECK(!step_of("-1 hour fcst").has_value());
+		CHECK(!step_of("-9223372036854775808 hour fcst").has_value());
+		CHECK(!step_of("15 min fcst").has_value());
+		CHECK(!step_of("0-1 hour acc fcst").has_value());
+		// The arithmetic read_grib2 performs for valid_time, at the largest step and the latest reference time
+		const int64_t latest_reference_us = 253402300799000000LL; // 9999-12-31 23:59:59 UTC
+		int64_t microseconds = 0;
+		CHECK(!__builtin_mul_overflow(IDX_MAX_STEP_HOURS, 3600000000LL, &microseconds));
+		int64_t valid_us = 0;
+		CHECK(!__builtin_add_overflow(latest_reference_us, microseconds, &valid_us));
+
+		// Point counts: stop corrupt or hostile counts before ecCodes sees them
+		MessageSummary counts;
+		counts.grid_points = 3700000;
+		counts.data_points = 3700000;
+		CHECK(CheckMessageCounts(counts, err));
+		counts.grid_points = static_cast<uint32_t>(MAX_GRID_CELLS);
+		counts.data_points = static_cast<uint32_t>(MAX_GRID_CELLS);
+		CHECK(CheckMessageCounts(counts, err));
+		counts.grid_points = static_cast<uint32_t>(MAX_GRID_CELLS) + 1;
+		CHECK(!CheckMessageCounts(counts, err));
+		counts.grid_points = 100;
+		counts.data_points = 0xFFFFFFFFu;
+		CHECK(!CheckMessageCounts(counts, err));
+		counts.grid_points = 0xFFFFFFFFu;
+		counts.data_points = 100;
+		CHECK(!CheckMessageCounts(counts, err));
+	}
+
 	std::printf("robustness: %zu parser inputs, failures=%d\n", inputs, failures);
 	return failures == 0 ? 0 : 1;
 }

@@ -24,6 +24,10 @@
 
 namespace duckdb {
 
+//! Largest forecast step taken from an inventory line, in hours (over a hundred years). Larger or negative values are
+//! left unset: they come from a corrupt line, and multiplying them into microseconds would overflow.
+constexpr int64_t IDX_MAX_STEP_HOURS = 1000000;
+
 struct IdxEntry {
 	int64_t message_number = 0;
 	int64_t byte_offset = 0;
@@ -41,7 +45,8 @@ struct IdxEntry {
 	//! Raw qualifier text, empty when the line has none
 	std::string qualifier;
 
-	//! Forecast hour when the forecast text is "anl" (0) or "N hour fcst"; empty for accumulations, maxima, etc.
+	//! Forecast hour when the forecast text is "anl" (0) or "N hour fcst" (0 to IDX_MAX_STEP_HOURS); empty for
+	//! accumulations, maxima, sub-hourly steps and anything else
 	std::optional<int64_t> step_hours;
 	//! N for a qualifier of the form "N% level"
 	std::optional<double> percentile;
@@ -102,7 +107,8 @@ inline void IdxAnalyze(IdxEntry &entry) {
 	} else if (entry.forecast.size() > hour_suffix.size() &&
 	           entry.forecast.compare(entry.forecast.size() - hour_suffix.size(), hour_suffix.size(), hour_suffix) ==
 	               0 &&
-	           IdxParseInt(entry.forecast.substr(0, entry.forecast.size() - hour_suffix.size()), number)) {
+	           IdxParseInt(entry.forecast.substr(0, entry.forecast.size() - hour_suffix.size()), number) &&
+	           number >= 0 && number <= IDX_MAX_STEP_HOURS) {
 		entry.step_hours = number;
 	}
 
