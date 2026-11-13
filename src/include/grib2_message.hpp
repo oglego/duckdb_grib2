@@ -376,4 +376,23 @@ inline SectionParseResult ParseMessageSections(const uint8_t *data, size_t size,
 	}
 }
 
+//! Screen a message before ecCodes sees it. Returns false and sets `error` unless the message is one whose layout this
+//! file can check and that passes every check. A message the section parser cannot finish (truncated headers, a bad
+//! section length, a GRIB edition other than 2) is refused too: ecCodes trusts its input, so "left to ecCodes" is how
+//! corrupt messages reached the decoder. `size` may exceed the message length (the first message in a buffer is used).
+inline bool ScreenMessage(const uint8_t *data, size_t size, std::string &error) {
+	MessageSummary summary;
+	size_t needed = 0;
+	switch (ParseMessageSections(data, size, summary, needed, error)) {
+	case SectionParseResult::OK:
+		break;
+	case SectionParseResult::NEED_MORE:
+		error = "the message ends before its headers do (truncated?)";
+		return false;
+	default: // INVALID: the parser has set the error
+		return false;
+	}
+	return CheckMessageCounts(summary, error) && CheckDataRepresentation(data, size, summary, error);
+}
+
 } // namespace duckdb

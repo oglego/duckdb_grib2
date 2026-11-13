@@ -50,16 +50,13 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 static std::string DescribeGribMessage(const char *data, idx_t size) {
 	const char *function = "grib2_message_info";
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
-	const std::vector<double> values = DecodeGribValues(handle.get(), function);
-
-	// Cells masked out by a bitmap come back as the missing value; leave them out of min and max
-	const bool has_bitmap = Grib2LongKeyOrDefault(handle.get(), "bitmapPresent", 0) != 0;
-	const double missing_value = Grib2OptionalDouble(handle.get(), "missingValue").value_or(9999.0);
+	const DecodedValues field = DecodeValues(handle.get(), function);
 	bool any_value = false;
 	double min_value = 0;
 	double max_value = 0;
-	for (const double value : values) {
-		if (has_bitmap && value == missing_value) {
+	// Cells masked out by a bitmap come back as the missing value; leave them out of min and max
+	for (const double value : field.values) {
+		if (field.IsMasked(value)) {
 			continue;
 		}
 		if (!any_value) {
@@ -81,7 +78,7 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 		out += Grib2KeyAsString(handle.get(), key);
 		out += ";";
 	}
-	out += "values=" + std::to_string(values.size()) + ";min=" + min_str + ";max=" + max_str;
+	out += "values=" + std::to_string(field.values.size()) + ";min=" + min_str + ";max=" + max_str;
 	return out;
 }
 
@@ -97,20 +94,8 @@ static optional<double> PointValueFromMessage(const char *data, idx_t size, doub
 		return optional<double>();
 	}
 
-	const std::vector<double> values = DecodeGribValues(h, function);
-	const int64_t cell_count = grid.Ni() * grid.Nj();
-	if (static_cast<int64_t>(values.size()) != cell_count) {
-		throw InvalidInputException(std::string(function) + ": the message has " + std::to_string(values.size()) +
-		                            " values but its grid has " + std::to_string(cell_count) + " cells");
-	}
-	const double value =
-	    values[static_cast<size_t>(RawValueIndex(grid.Ni(), cell.i, cell.j, grib_grid.alternative_rows))];
-
-	// Cells masked out by a bitmap come back as the message's missing value
-	if (Grib2LongKeyOrDefault(h, "bitmapPresent", 0) != 0 && value == Grib2DoubleKey(h, "missingValue", function)) {
-		return optional<double>();
-	}
-	return value;
+	const DecodedValues field = DecodeValues(h, function, grid.Ni() * grid.Nj());
+	return field.At(RawValueIndex(grid.Ni(), cell.i, cell.j, grib_grid.spec.alternative_rows));
 }
 
 inline void Grib2MessageInfoScalarFun(DataChunk &args, ExpressionState &state, Vector &result) {

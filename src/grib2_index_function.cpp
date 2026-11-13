@@ -6,6 +6,7 @@
 #include "grib2_idx.hpp"
 #include "grib2_message.hpp"
 #include "grib2_settings.hpp"
+#include "grib2_vector_writers.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -118,28 +119,6 @@ unique_ptr<GlobalTableFunctionState> Grib2IndexInit(ClientContext &context, Tabl
 		}
 	}
 	return state;
-}
-
-//! Write an optional value, as NULL when it is absent
-template <class T>
-void WriteOptional(VectorWriter<T> &writer, const optional<T> &value) {
-	if (value) {
-		writer.WriteValue(*value);
-	} else {
-		writer.WriteNull();
-	}
-}
-
-void WriteString(VectorWriter<string_t> &writer, const std::string &value) {
-	writer.WriteValue(string_t(value.c_str(), UnsafeNumericCast<uint32_t>(value.size())));
-}
-
-void WriteOptionalString(VectorWriter<string_t> &writer, const optional<std::string> &value) {
-	if (value) {
-		WriteString(writer, *value);
-	} else {
-		writer.WriteNull();
-	}
 }
 
 void Grib2IndexScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {

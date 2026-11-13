@@ -179,10 +179,14 @@ void Stage(const char *name, const char *detail = "") {
 	    indicator.total_length != msg.size()) {
 		_exit(SCREENED);
 	}
-	MessageSummary summary;
-	if (ParseMessageSections(msg.data(), msg.size(), summary, needed, error) == SectionParseResult::OK &&
-	    (!duckdb::CheckMessageCounts(summary, error) ||
-	     (!g_skip_data_check && !duckdb::CheckDataRepresentation(msg.data(), msg.size(), summary, error)))) {
+	if (g_skip_data_check) {
+		// The behaviour before CheckDataRepresentation existed: only the point counts were screened
+		MessageSummary summary;
+		if (ParseMessageSections(msg.data(), msg.size(), summary, needed, error) == SectionParseResult::OK &&
+		    !duckdb::CheckMessageCounts(summary, error)) {
+			_exit(SCREENED);
+		}
+	} else if (!duckdb::ScreenMessage(msg.data(), msg.size(), error)) {
 		_exit(SCREENED);
 	}
 

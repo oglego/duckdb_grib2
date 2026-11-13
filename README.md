@@ -1,40 +1,13 @@
 # grib2: GRIB2 weather data in DuckDB
 
 A DuckDB extension for querying GRIB2 files with SQL. List the messages in a file, then read decoded values at the points
-or inside the bounding box you care about, from local files or from object storage such as the
+or inside the bounding box that you are interested in, from local files or from object storage such as the
 [NOAA National Blend of Models (NBM)](https://registry.opendata.aws/noaa-nbm/) bucket. Decoding is done by
 [ecCodes](https://github.com/ecmwf/eccodes).
 
-> **Status: early.** It works on local files and, through `httpfs`, on the public NBM bucket. It has been tested on NBM
-> data (all five regions) and has not been published to the community-extensions repository yet, so there is no
-> `INSTALL grib2 FROM community` yet; see [Installing](#installing).
-
-## Production and community-extension release checklist
-
-**This project is not yet ready to be presented as an official DuckDB community extension for general production use.**
-The checklist below is a release gate; do not describe the extension as production-ready or publish it for general use
-until every item is complete and its evidence is reviewed.
-
-- [ ] **Define and verify the supported meteorological data matrix.** Document supported sources, GRIB2 grid templates,
-  Earth shapes, scanning modes, packing templates, and forecast/product types. Expand independent-oracle tests beyond
-  the current NBM forecast-hour-1 fixtures for every combination claimed as supported; explicitly keep unsupported
-  combinations out of production claims until tested.
-- [x] **Validate bounding boxes and bound search matching.** Bounding boxes now reject non-finite coordinates and
-  longitudes outside -360 to 360 before grid selection. `search` now uses DuckDB's RE2 engine, avoiding
-  backtracking-time blowups; regression tests cover invalid boxes and unsupported regex syntax.
-- [ ] **Test query resource limits under adversarial inputs.** Exercise documented size, memory, cancellation, and
-  concurrency limits with hostile or malformed inputs.
-- [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, but
-  ecCodes' full-message decoder is not fuzzed here and may crash on malformed input. Establish a supported ecCodes
-  version/update policy, exercise malformed-message cases, and document an agreed risk/containment policy before
-  recommending use with data from untrusted sources.
-- [ ] **Verify release builds and end-to-end behavior on every advertised platform.** Require the distribution
-  pipeline and SQL tests to pass for the supported DuckDB versions and architectures, and add repeatable coverage for
-  remote `httpfs` reads, missing/stale sidecars, and failure/cancellation behavior. Publish the exact tested
-  DuckDB/ecCodes versions and platform exclusions.
-- [ ] **Finish operational release documentation.** Document the stable function/API compatibility policy, supported
-  DuckDB versions, upgrade/release process, and maintainer contact/reporting path; keep the install instructions and
-  limitations aligned with the published binary.
+> **Status: early.** The extension works on local files and, through `httpfs`, on public NBM data, but has not been
+> published to the DuckDB community-extensions repository and is not ready for general production use. See the
+> [release-readiness checklist](docs/RELEASE_READINESS.md) for what remains before release.
 
 ## Quickstart
 
@@ -154,17 +127,13 @@ once and fetches the next few messages while it decodes the current one.
 
 ## What it reads
 
-- **Grids:** Lambert conformal (NBM CONUS), polar stereographic (north, NBM Alaska) and Mercator (NBM Hawaii, Puerto Rico,
-  Guam), on a spherical earth, with the usual scanning mode (rows stored west to east and south to north, with or without
-  alternating row direction). Other grid types (for example regular latitude/longitude, as in GFS) and ellipsoidal earths
-  give a "not supported yet" error.
-- **Packing:** ecCodes decodes the values. The packing templates exercised by the tests are 5.3 (complex with spatial
-  differencing) and 5.2 (complex). Others are passed to ecCodes but not tested here. JPEG 2000 support (OpenJPEG) is built
-  in, untested; CCSDS is not built in.
-- **Inventory files:** the `.idx` format NOAA publishes (wgrib2 style). Lines of the form `n.m` (several fields in one
-  message) are not supported yet.
-- **Tested data:** NBM CONUS, Alaska, Hawaii, Puerto Rico and Guam, forecast hour 1 of the core product. Other sources, such
-  as HRRR (also Lambert conformal), should work but have not been tried.
+The extension has been tested with NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam.
+It supports Lambert conformal, north polar stereographic and Mercator grids on a spherical earth, with the usual NBM
+scanning modes. Other grid types and scanning modes are not supported. Other sources and product types have not yet
+been verified.
+
+See [Supported inputs and operational limits](docs/OPERATIONS.md) for details about packing, inventory files, limits,
+and data that has not been tested.
 
 ## Settings, limits and untrusted input
 
@@ -172,59 +141,19 @@ once and fetches the next few messages while it decodes the current one.
 SET grib2_io_threads = 8;   -- default 8, range 1 to 64
 ```
 
-`grib2_index` and `read_grib2` overlap network round trips by reading from a few background threads. They call DuckDB's
-file system from those threads rather than from DuckDB's own. If a filesystem extension misbehaves under that, or the
-environment restricts thread creation, `SET grib2_io_threads = 1` keeps every read on the query's thread (slower on
-remote files, same results).
+`grib2_index` and `read_grib2` overlap remote reads using background threads. Set this to `1` to keep reads on the query
+thread if a filesystem extension or environment does not support background reads:
 
-Limits, each reported as an error that names the file and message:
+```sql
+SET grib2_io_threads = 1;
+```
 
-| Limit | Value |
-|---|---|
-| `.idx` file size | 64 MiB |
-| One message | 1 GiB |
-| Grid size (`Ni x Nj`) | 250 million cells |
-| `search` pattern length | 1024 characters |
-| Message bytes held in flight by prefetching | 128 MiB (at least one message) |
-| Grid or data points a message may claim (checked before ecCodes sees it) | 250 million |
-| Message length field | 2^62 (far above any real message; larger is refused) |
-| Forecast step read from an `.idx` line | 0 to 1,000,000 hours (otherwise `valid_time` is NULL) |
-
-Grid definitions are validated before use: non-positive spacing, a non-finite coordinate or earth radius, or a grid over
-the limit is refused instead of producing wrong or non-finite coordinates.
-
-**Untrusted input.** The `.idx` and section-header parsers are covered by sanitizer and fuzz runs in CI. The decoding
-itself is done by ecCodes, which parses the whole message and has had memory-safety bugs fixed in the past; it is not
-fuzzed here. Read files you trust, or run DuckDB where a crash is contained, when the source of the GRIB2 data is not
-under your control. A malformed message produces an error in most cases, but that is not a guarantee against a crash in
-ecCodes.
-
-Other things to know:
-
-- URLs with a query string (for example presigned S3 URLs) are not given a sidecar lookup: `.idx` is appended to the
-  whole string, so the inventory is not found and `search` is unavailable. Use `message := ...` there.
-- A file with no `.idx` is walked message by message. Each message must fit in the rest of the file and be at least 20
-  bytes, so the walk always moves forward and ends; a message whose length runs past the end is reported as truncated.
-- `message := []` (an empty list) is an error. Leave `message` out to read every message.
-- With a bitmap, a cell whose decoded value is exactly the message's missing-value marker (9999 unless the message says
-  otherwise) is returned as NULL.
-- Errors from reading a file (network, permissions) keep their DuckDB error type and name the file and message number.
-- `read_grib2` reads and decodes on one thread; query cancellation is honoured between messages.
+See [operational notes](docs/OPERATIONS.md) for resource limits, input caveats, and guidance on untrusted files.
 
 ## Performance
 
-Measured on an 8-core Apple silicon Mac, from the author's network, on the real NBM CONUS file:
-
-| Query | Time |
-|---|---|
-| `read_grib2` points query across all 154 messages, local file | 3.2 s (about 20 ms per message) |
-| Every cell of one message (3.7M rows, aggregated), local file | 0.3 s |
-| A point for six forecast hours over `s3://` (six files) | 1.4 s (4.3 s before overlapping requests) |
-| The inventory of a 156 MB remote file | 0.4 s |
-| Header hopping on a remote file without a sidecar | about 75 ms per message |
-
-A message is decoded in full whatever you select, so spatial filters save rows and memory, not decode time. Decoding is
-single-threaded; remote reads are overlapped.
+Every selected message is decoded in full, so spatial filters reduce output rows and memory, not decode time. Remote
+reads are overlapped; see the [measured examples](docs/OPERATIONS.md#performance).
 
 ## Installing
 
@@ -236,88 +165,18 @@ INSTALL grib2 FROM community;
 LOAD grib2;
 ```
 
-## Building from source
+## Building and testing
 
-DuckDB extensions use vcpkg for dependencies (this one needs ecCodes). Follow the
-[vcpkg installation instructions](https://vcpkg.io/en/getting-started) or run:
-
-```sh
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-export VCPKG_TOOLCHAIN_PATH=`pwd`/vcpkg/scripts/buildsystems/vcpkg.cmake
-```
-
-Clone with submodules (`git clone --recurse-submodules`, or `git submodule update --init --recursive`), then:
-
-```sh
-make
-```
-
-This builds `./build/release/duckdb` (a DuckDB shell), `./build/release/test/unittest` (the test runner) and
-`./build/release/extension/grib2/grib2.duckdb_extension` (the loadable extension). A locally built extension is unsigned and
-is not loaded automatically:
-
-```sh
-./build/release/duckdb -unsigned -c "LOAD './build/release/extension/grib2/grib2.duckdb_extension';" -c "SELECT grib2_eccodes_version();"
-```
-
-**Notes**
-
-- `python3` must be on your `PATH` for the ecCodes build.
-- `vcpkg_ports/eccodes/` is a copy of the upstream vcpkg `eccodes` 2.47.0 port (from the vcpkg commit the DuckDB CI uses)
-  with one change: the host `python3` dependency is removed. That dependency pulls in `python3[extensions]` and `libb2` on
-  non-Windows platforms, and `libb2` needs `autoconf-archive` and `automake`, which the Linux CI images do not provide. The
-  portfile still finds a system `python3`. When bumping the vcpkg commit, refresh the copy from upstream and reapply the
-  change. `vcpkg.json` lists `./vcpkg_ports` ahead of `./extension-ci-tools/vcpkg_ports` under `overlay-ports`.
-- **Platforms.** It builds on the default CI platforms, including Windows with MSVC. These are excluded
-  (`exclude_archs` in `.github/workflows/MainDistributionPipeline.yml`): `wasm_mvp`, `wasm_eh` and `wasm_threads` (ecCodes
-  does not configure on the community `wasm32-emscripten` triplet) and `windows_amd64_mingw` (ecCodes fails to configure on
-  `x64-mingw-static`).
-- **`httpfs` in a local binary.** A binary built from the `duckdb` submodule has no published `httpfs`, so `INSTALL httpfs`
-  returns a 404. Build it in with a local, git-ignored config. Do **not** add it to `extension_config.cmake`: CI builds every
-  extension listed there, and `httpfs` needs libcurl, which is not in this repo's vcpkg manifest. Create
-  `extension_config_local.cmake`:
-
-  ```cmake
-  duckdb_extension_load(httpfs
-      GIT_URL https://github.com/duckdb/duckdb-httpfs
-      GIT_TAG a2485c0fd240cbddc0d467019f30201c9a46cf06
-  )
-  ```
-
-  then `make EXTRA_EXTENSION_CONFIGS=$PWD/extension_config_local.cmake` (this worked on macOS arm64 with the system libcurl),
-  and load both by path, `httpfs` first:
-
-  ```sh
-  ./build/release/duckdb -unsigned \
-    -c "LOAD './build/release/extension/httpfs/httpfs.duckdb_extension';" \
-    -c "LOAD './build/release/extension/grib2/grib2.duckdb_extension';"
-  ```
-
-## Tests
-
-```sh
-make test
-```
-
-`make test` runs DuckDB's `run_tests.py`, which needs Python 3.10 or newer. On older Pythons run the binary directly:
-`./build/release/test/unittest "test/*"`. Run from the repository root: tests read their data files relative to it.
-
-The grid geometry and the `.idx` and section parsers also have standalone checks that need no DuckDB or ecCodes, run in CI:
-
-```sh
-g++ -std=c++17 -O2 -I src/include test/cpp/grid_check.cpp -o /tmp/grid_check && /tmp/grid_check
-g++ -std=c++17 -O2 -I src/include test/cpp/idx_check.cpp -o /tmp/idx_check && /tmp/idx_check
-```
-
-Test data is described in [fixtures/README.md](fixtures/README.md) and `test/README.md`. Before pushing, run
-`make format-check` (or `make format-fix`). CI runs the format check only: the `tidy` check configures the project without
-vcpkg, so it cannot find ecCodes.
+Build from source with `make`; run the SQL tests with `make test`. See [Building from source](docs/BUILDING.md) for
+dependencies, loading a local build, platform notes, and test alternatives. Test fixtures and coverage are described in
+[test/README.md](test/README.md).
 
 ## More documentation
 
-[docs/DESIGN.md](docs/DESIGN.md) has the design notes: the findings behind the decisions (value ordering, projections, the
-`.idx` format, packing survey), measurements, and what is planned next.
+- [Supported inputs and operational limits](docs/OPERATIONS.md): compatibility, limits, and performance notes.
+- [Building from source](docs/BUILDING.md): dependencies, local builds, and test commands.
+- [ecCodes integration](docs/ECCODES.md): the decoder boundary, keys, and API calls.
+- [Design notes](docs/DESIGN.md): findings behind value ordering, projections, the `.idx` format, and packing support.
 
 ## Licenses
 

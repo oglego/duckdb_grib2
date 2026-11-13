@@ -44,12 +44,7 @@ static std::vector<size_t> MessageStarts(const std::vector<uint8_t> &file) {
 
 //! Screening exactly as OpenGribMessage does it; true when the message may go on to ecCodes
 static bool Accepted(const std::vector<uint8_t> &msg, std::string &error) {
-	MessageSummary summary;
-	size_t needed = 0;
-	if (ParseMessageSections(msg.data(), msg.size(), summary, needed, error) != SectionParseResult::OK) {
-		return true; // left to ecCodes
-	}
-	return CheckMessageCounts(summary, error) && CheckDataRepresentation(msg.data(), msg.size(), summary, error);
+	return ScreenMessage(msg.data(), msg.size(), error);
 }
 
 static size_t FindSection(const std::vector<uint8_t> &msg, int number) {
@@ -188,6 +183,31 @@ int main() {
 			std::vector<uint8_t> msg = masked;
 			msg.resize(msg.size() - 10);
 			Check(!Accepted(msg, error), "a message shorter than its declared length was not refused");
+		}
+		{ // headers the section parser cannot finish are refused, not left to ecCodes
+			for (const size_t keep : {size_t(16), size_t(40), size_t(100)}) {
+				std::vector<uint8_t> msg = masked;
+				msg.resize(keep);
+				Check(!Accepted(msg, error), "a message cut to " + std::to_string(keep) + " bytes was not refused");
+				Check(!error.empty(), "no error text for a message cut to " + std::to_string(keep) + " bytes");
+			}
+		}
+		{ // GRIB edition 1
+			std::vector<uint8_t> msg = masked;
+			msg[7] = 1;
+			Check(!Accepted(msg, error), "a GRIB edition 1 message was not refused");
+		}
+		{ // section 1 with an impossible length
+			for (const uint32_t length : {uint32_t(0), uint32_t(2), uint32_t(0xFFFFFFFFu)}) {
+				std::vector<uint8_t> msg = masked;
+				Put32(msg, 16, length);
+				Check(!Accepted(msg, error), "section 1 with length " + std::to_string(length) + " was not refused");
+			}
+		}
+		{ // extra bytes after the message (the first message in a buffer is used) are fine
+			std::vector<uint8_t> msg = masked;
+			msg.insert(msg.end(), masked.begin(), masked.end());
+			Check(Accepted(msg, error), "a message followed by another one was refused: " + error);
 		}
 		{ // a section number that does not exist
 			std::vector<uint8_t> msg = masked;

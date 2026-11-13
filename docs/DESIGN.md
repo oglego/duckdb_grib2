@@ -204,8 +204,8 @@ and decodes each selected message in turn.
   a masked cell does produce one, with a NULL value).
 - **Cost:** about one decode per message (roughly 320 ms for a CONUS message in the sandbox measurements above), whatever
   the spatial selection, because a spatial filter cannot skip decoding. Single-threaded for now. Cell selection (point
-  lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by a fingerprint of
-  the grid parameters), which is the case for every message in an NBM file.
+  lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by their
+  grid parameters), which is the case for every message in an NBM file.
 - **Remote:** verified over HTTPS and `s3://` against the public NBM bucket: the inventory of a 156 MB file in 0.4 s, one
   point from one message in 0.8 s (reading the `.idx` and a single 2 MB range), and a six-file time series in 5 s.
   Measured with request logging on the 37-message Guam file: exactly one range request per message plus one to open the
