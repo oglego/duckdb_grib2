@@ -9,6 +9,33 @@ or inside the bounding box you care about, from local files or from object stora
 > data (all five regions) and has not been published to the community-extensions repository yet, so there is no
 > `INSTALL grib2 FROM community` yet; see [Installing](#installing).
 
+## Production and community-extension release checklist
+
+**This project is not yet ready to be presented as an official DuckDB community extension for general production use.**
+The checklist below is a release gate; do not describe the extension as production-ready or publish it for general use
+until every item is complete and its evidence is reviewed.
+
+- [ ] **Define and verify the supported meteorological data matrix.** Document supported sources, GRIB2 grid templates,
+  Earth shapes, scanning modes, packing templates, and forecast/product types. Expand independent-oracle tests beyond
+  the current NBM forecast-hour-1 fixtures for every combination claimed as supported; explicitly keep unsupported
+  combinations out of production claims until tested.
+- [x] **Validate bounding boxes and bound search matching.** Bounding boxes now reject non-finite coordinates and
+  longitudes outside -360 to 360 before grid selection. `search` now uses DuckDB's RE2 engine, avoiding
+  backtracking-time blowups; regression tests cover invalid boxes and unsupported regex syntax.
+- [ ] **Test query resource limits under adversarial inputs.** Exercise documented size, memory, cancellation, and
+  concurrency limits with hostile or malformed inputs.
+- [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, but
+  ecCodes' full-message decoder is not fuzzed here and may crash on malformed input. Establish a supported ecCodes
+  version/update policy, exercise malformed-message cases, and document an agreed risk/containment policy before
+  recommending use with data from untrusted sources.
+- [ ] **Verify release builds and end-to-end behavior on every advertised platform.** Require the distribution
+  pipeline and SQL tests to pass for the supported DuckDB versions and architectures, and add repeatable coverage for
+  remote `httpfs` reads, missing/stale sidecars, and failure/cancellation behavior. Publish the exact tested
+  DuckDB/ecCodes versions and platform exclusions.
+- [ ] **Finish operational release documentation.** Document the stable function/API compatibility policy, supported
+  DuckDB versions, upgrade/release process, and maintainer contact/reporting path; keep the install instructions and
+  limitations aligned with the published binary.
+
 ## Quickstart
 
 ```sql
@@ -59,7 +86,7 @@ instead of giving wrong offsets.
 Decoded values in long format, one row per selected cell per message. `path` may be a glob.
 
 **Which messages.** All of them by default. `message := 133` or `[133, 134]` selects by message number. `search := '...'`
-is a regular expression (ECMAScript syntax) matched against the sidecar's inventory text, so it needs the `.idx`. The text
+is a regular expression (DuckDB's RE2 syntax) matched against the sidecar's inventory text, so it needs the `.idx`. The text
 looks like `TMP:2 m above ground:1 hour fcst`; it is matched as it is and with colons around it, so
 `':TMP:2 m above ground:'` selects whole fields, while an unanchored `TMP:2 m above ground` would also match
 `APTMP:2 m above ground`. Use `^` and `$` to pin down a single message. `message` and `search` can be combined.

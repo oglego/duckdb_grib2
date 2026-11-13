@@ -192,8 +192,8 @@ max; `read_grib2` must do the same.
 and decodes each selected message in turn.
 
 - **Which messages:** all of them by default; `message := 133` or `[133, 134]` selects by number; `search := '...'` is a
-  regular expression (ECMAScript syntax, from `std::regex`, not RE2) matched against the `.idx` inventory text and needs the
-  sidecar. Both can be combined.
+  regular expression (DuckDB's RE2 syntax) matched against the `.idx` inventory text and needs the sidecar. Both can be
+  combined.
 - **Which cells:** exactly one of `points` (nearest cell to each `{'lat', 'lon'}`), `bbox` (`[lon_min, lat_min, lon_max,
   lat_max]`, every cell centre inside) or `all_cells := true`. With none the function errors, because one CONUS message has
   3.7 million cells.

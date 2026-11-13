@@ -9,12 +9,15 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_system.hpp"
+#include "duckdb/common/re2_regex.hpp"
 #include "duckdb/function/table_function.hpp"
 
+#include "re2/re2.h"
+
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <future>
-#include <regex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -23,8 +26,8 @@
 //
 // Decoded grid values in long format: one row per selected cell per message.
 //
-//   Which messages:  all of them, or message := 133 / [133, 134], and/or search := 'TMP:2 m above ground' (a regular
-//                    expression, ECMAScript syntax, matched against the .idx inventory text; needs the sidecar).
+//   Which messages:  all of them, or message := 133 / [133, 134], and/or search := 'TMP:2 m above ground' (a RE2
+//                    regular expression matched against the .idx inventory text; needs the sidecar).
 //   Which cells:     exactly one of
 //                      points := [{'lat': 37.21, 'lon': -93.29}, ...]  nearest grid cell to each point
 //                      bbox := [lon_min, lat_min, lon_max, lat_max]    every cell centre inside the box
@@ -158,17 +161,16 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 		} else if (parameter.first == "search") {
 			result->has_search = true;
 			result->search = StringValue::Get(value);
-			// std::regex is a backtracking engine: bound the pattern so a query cannot pin a core for minutes
+			// Bound compile cost and memory even though RE2 guarantees linear-time matching.
 			if (result->search.size() > MAX_SEARCH_PATTERN_LENGTH) {
 				throw InvalidInputException("read_grib2: search is longer than " +
 				                            std::to_string(MAX_SEARCH_PATTERN_LENGTH) + " characters");
 			}
-			try {
-				const std::regex check(result->search, std::regex::ECMAScript);
-				(void)check;
-			} catch (const std::regex_error &error) {
-				throw InvalidInputException("read_grib2: search is not a valid regular expression: " +
-				                            std::string(error.what()));
+			duckdb_re2::RE2::Options options;
+			options.set_log_errors(false);
+			const duckdb_re2::RE2 check(result->search, options);
+			if (!check.ok()) {
+				throw InvalidInputException("read_grib2: search is not a valid regular expression: " + check.error());
 			}
 		} else if (parameter.first == "points") {
 			result->mode = SpatialMode::POINTS;
@@ -183,7 +185,17 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 			for (idx_t b = 0; b < 4; b++) {
 				result->bbox[b] = ToDouble(items[b], "every bbox value");
 			}
-			if (result->bbox[1] < -90.0 || result->bbox[3] > 90.0 || result->bbox[1] > result->bbox[3]) {
+			for (const double coordinate : result->bbox) {
+				if (!std::isfinite(coordinate)) {
+					throw InvalidInputException("read_grib2: bbox coordinates must be finite");
+				}
+			}
+			if (result->bbox[0] < -360.0 || result->bbox[0] > 360.0 || result->bbox[2] < -360.0 ||
+			    result->bbox[2] > 360.0) {
+				throw InvalidInputException("read_grib2: bbox longitudes must be between -360 and 360");
+			}
+			if (result->bbox[1] < -90.0 || result->bbox[1] > 90.0 || result->bbox[3] < -90.0 ||
+			    result->bbox[3] > 90.0 || result->bbox[1] > result->bbox[3]) {
 				throw InvalidInputException(
 				    "read_grib2: bbox latitudes must satisfy -90 <= lat_min <= lat_max <= 90 (the order is "
 				    "[lon_min, lat_min, lon_max, lat_max])");
@@ -297,9 +309,11 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	state->fs = &fs;
 	state->fetch_policy = Grib2IoThreads(context) > 1 ? std::launch::async : std::launch::deferred;
 
-	std::regex search;
+	std::unique_ptr<duckdb_re2::RE2> search;
 	if (bind_data.has_search) {
-		search = std::regex(bind_data.search, std::regex::ECMAScript);
+		duckdb_re2::RE2::Options options;
+		options.set_log_errors(false);
+		search = make_uniq<duckdb_re2::RE2>(bind_data.search, options);
 	}
 	std::vector<std::string> paths;
 	for (const auto &file : files) {
@@ -321,8 +335,8 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 					                            "message := ... instead");
 				}
 				// Match the text as it is and with colons around it, so ":TMP:2 m above ground:" works too
-				if (!std::regex_search(*row.inventory, search) &&
-				    !std::regex_search(":" + *row.inventory + ":", search)) {
+				if (!duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(*row.inventory), *search) &&
+				    !duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(":" + *row.inventory + ":"), *search)) {
 					continue;
 				}
 			}

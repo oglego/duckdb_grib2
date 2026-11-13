@@ -395,12 +395,32 @@ SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [0, 10, 5, 5]);
 bbox latitudes must satisfy
 
 statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := ['nan'::DOUBLE, 0, 5, 5]);
+----
+bbox coordinates must be finite
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [0, 0, 'inf'::DOUBLE, 5]);
+----
+bbox coordinates must be finite
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [361, 0, 365, 5]);
+----
+bbox longitudes must be between -360 and 360
+
+statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', search := 'TMP', all_cells := true);
 ----
 search needs the .idx
 
 statement error
 SELECT * FROM read_grib2('test/data/multi.grib2', search := '(', all_cells := true);
+----
+not a valid regular expression
+
+statement error
+SELECT * FROM read_grib2('test/data/multi.grib2', search := '(?=APTMP)', all_cells := true);
 ----
 not a valid regular expression
 

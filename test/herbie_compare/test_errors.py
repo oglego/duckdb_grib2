@@ -88,9 +88,12 @@ def test_nan_and_infinite_coordinates_are_handled(rg):
             assert int(rg.sql(sql)["n"][0]) == 0
 
 
-def test_nan_bbox_is_handled(rg):
-    err = rg.error(f"SELECT count(*) FROM read_grib2({sql_str(GU)}, bbox := ['nan'::DOUBLE, 0, 10, 10])")
-    assert err is None or err  # graceful either way (crash would have raised)
+def test_nan_bbox_is_rejected(rg):
+    _expect_error(
+        rg,
+        f"SELECT count(*) FROM read_grib2({sql_str(GU)}, bbox := ['nan'::DOUBLE, 0, 10, 10])",
+        "bbox coordinates must be finite",
+    )
 
 
 def test_null_and_missing_paths(rg):
