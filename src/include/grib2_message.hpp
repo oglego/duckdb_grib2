@@ -155,6 +155,169 @@ inline bool CheckMessageCounts(const MessageSummary &summary, std::string &error
 	return true;
 }
 
+//! Unsigned integer of `bits` (0 to 32) bits starting at bit `position` of a big-endian bit stream. The caller has
+//! checked that the bits lie inside the buffer.
+inline uint64_t ReadBitsBigEndian(const uint8_t *data, uint64_t position, unsigned bits) {
+	if (bits == 0) {
+		return 0;
+	}
+	const uint8_t *first = data + (position >> 3);
+	const unsigned shift = static_cast<unsigned>(position & 7);
+	const unsigned bytes = (shift + bits + 7) / 8; // at most 5, so the window fits in 64 bits
+	uint64_t window = 0;
+	for (unsigned k = 0; k < bytes; k++) {
+		window = (window << 8) | first[k];
+	}
+	window >>= bytes * 8 - shift - bits;
+	return window & ((uint64_t(1) << bits) - 1);
+}
+
+//! Reject malformed GRIB2 messages before ecCodes sees them. ecCodes trusts the input: bad lengths, absurd group
+//! counts, or bit widths above 64 can abort or segfault the decoder. We do a basic whole-message check: sections must
+//! be contiguous up to the final "7777" marker, and the field must satisfy a few sanity checks that no valid message
+//! can violate. Other packing templates are left to ecCodes.
+inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const MessageSummary &summary,
+                                    std::string &error) {
+	if (summary.total_length > size) {
+		error = "the message is shorter than the length in its indicator section";
+		return false;
+	}
+	const uint64_t total = summary.total_length;
+	if (total < 20 || std::memcmp(data + total - 4, "7777", 4) != 0) {
+		error = "the message does not end with the 7777 end section";
+		return false;
+	}
+	const uint8_t *section5 = nullptr;
+	uint64_t section5_length = 0;
+	const uint8_t *section6 = nullptr;
+	uint64_t section6_length = 0;
+	const uint8_t *section7 = nullptr;
+	uint64_t section7_length = 0;
+	uint64_t pos = 16;
+	while (pos < total - 4) {
+		const uint64_t length = pos + 5 <= total - 4 ? ReadBigEndian32(data + pos) : 0;
+		const int number = pos + 5 <= total - 4 ? data[pos + 4] : 0;
+		if (length < 5 || pos + length > total - 4 || number < 1 || number > 7) {
+			error = "the sections of the message do not add up to its length";
+			return false;
+		}
+		if (number == 5 && !section5) {
+			section5 = data + pos;
+			section5_length = length;
+		} else if (number == 6 && section5 && !section6) {
+			section6 = data + pos;
+			section6_length = length;
+		} else if (number == 7 && section6 && !section7) {
+			section7 = data + pos;
+			section7_length = length;
+		}
+		pos += length;
+	}
+	if (!section5 || !section6 || !section7) {
+		error = "the message has no complete data representation, bitmap and data sections";
+		return false;
+	}
+	// An explicit bitmap (indicator 0) carries one bit per grid point
+	if (section6_length >= 6 && section6[5] == 0 && (section6_length - 6) * 8 < summary.grid_points) {
+		error = "the bitmap is too short for the number of grid points";
+		return false;
+	}
+	if (summary.data_template != 0 && summary.data_template != 2 && summary.data_template != 3) {
+		return true;
+	}
+	const bool spatial = summary.data_template == 3;
+	const uint64_t required_length = summary.data_template == 0 ? 20 : (spatial ? 49 : 47);
+	if (section5_length < required_length) {
+		error = "the data representation section is shorter than its template requires";
+		return false;
+	}
+	const uint64_t values = ReadBigEndian32(section5 + 5);
+	const uint64_t bits_per_value = section5[19];
+	const uint64_t payload_bits = (section7_length - 5) * 8;
+	if (bits_per_value > 64) {
+		error = "the data representation section declares " + std::to_string(bits_per_value) + " bits per value";
+		return false;
+	}
+	if (summary.data_template == 0) {
+		if (values * bits_per_value > payload_bits) {
+			error = "the data section is too short for the declared number of packed values";
+			return false;
+		}
+		return true;
+	}
+	// Complex packing: octets 32-35 number of groups, 36 reference for group widths, 37 bits for group widths, 47 bits
+	// for scaled group lengths; with spatial differencing octets 48 (order) and 49 (octets per extra descriptor)
+	const uint64_t groups = ReadBigEndian32(section5 + 31);
+	const uint64_t width_reference = section5[35];
+	const uint64_t width_bits = section5[36];
+	const uint64_t length_bits = section5[46];
+	if (width_reference > 64 || width_bits > 32 || length_bits > 32) {
+		error = "the data representation section declares group widths or lengths that cannot be stored";
+		return false;
+	}
+	if (groups > values) {
+		error = "the data representation section declares " + std::to_string(groups) + " groups for " +
+		        std::to_string(values) + " values";
+		return false;
+	}
+	uint64_t descriptor_bytes = 0;
+	if (spatial) {
+		const uint64_t order = section5[47];
+		const uint64_t octets = section5[48];
+		if (order > 2 || octets > 8) {
+			error = "the data representation section declares an unsupported spatial differencing";
+			return false;
+		}
+		descriptor_bytes = (order + 1) * octets;
+	}
+	// Section 7 holds the extra descriptors, then three bit-packed tables of one entry per group (references, widths,
+	// scaled lengths; each padded to a whole octet), then the packed values of every group one after the other
+	const uint64_t payload_bytes = section7_length - 5;
+	const uint64_t reference_bytes = (groups * bits_per_value + 7) / 8;
+	const uint64_t widths_bytes = (groups * width_bits + 7) / 8;
+	const uint64_t lengths_bytes = (groups * length_bits + 7) / 8;
+	const uint64_t tables_bytes = descriptor_bytes + reference_bytes + widths_bytes + lengths_bytes;
+	if (tables_bytes > payload_bytes) {
+		error = "the data section is too short for the declared group tables";
+		return false;
+	}
+	// Walk the tables the way the decoder will: the groups must not hold more values than the message declares, and
+	// their packed values must fit in what is left of the data section. Anything else is read past the buffer.
+	const uint8_t *widths = section7 + 5 + descriptor_bytes + reference_bytes;
+	const uint8_t *lengths = widths + widths_bytes;
+	const uint64_t length_reference = ReadBigEndian32(section5 + 37);
+	const uint64_t length_increment = section5[41];
+	const uint64_t last_length = ReadBigEndian32(section5 + 42);
+	const uint64_t packed_bits = (payload_bytes - tables_bytes) * 8;
+	uint64_t total_values = 0;
+	uint64_t total_bits = 0;
+	for (uint64_t group = 0; group < groups; group++) {
+		const uint64_t width =
+		    width_reference + ReadBitsBigEndian(widths, group * width_bits, static_cast<unsigned>(width_bits));
+		uint64_t length = last_length;
+		if (group + 1 < groups) {
+			length =
+			    length_reference +
+			    ReadBitsBigEndian(lengths, group * length_bits, static_cast<unsigned>(length_bits)) * length_increment;
+		}
+		if (width > 64) {
+			error = "the data representation section declares a group wider than 64 bits";
+			return false;
+		}
+		total_values += length;
+		if (total_values > values) {
+			error = "the groups hold more values than the " + std::to_string(values) + " the message declares";
+			return false;
+		}
+		total_bits += length * width; // at most values * 64, which cannot overflow
+		if (total_bits > packed_bits) {
+			error = "the data section is too short for the packed group values";
+			return false;
+		}
+	}
+	return true;
+}
+
 //! Describe the first field of a message from a prefix of its bytes. Returns NEED_MORE with the number of bytes
 //! required when the prefix is too short; the caller may cap that at total_length once the indicator is known.
 inline SectionParseResult ParseMessageSections(const uint8_t *data, size_t size, MessageSummary &out, size_t &needed,

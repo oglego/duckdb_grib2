@@ -75,7 +75,9 @@ inline CodesHandlePtr OpenGribMessage(const char *function, const char *data, id
 	std::string screen_error;
 	if (ParseMessageSections(reinterpret_cast<const uint8_t *>(data), static_cast<size_t>(size), summary, needed,
 	                         screen_error) == SectionParseResult::OK &&
-	    !CheckMessageCounts(summary, screen_error)) {
+	    (!CheckMessageCounts(summary, screen_error) ||
+	     !CheckDataRepresentation(reinterpret_cast<const uint8_t *>(data), static_cast<size_t>(size), summary,
+	                              screen_error))) {
 		throw InvalidInputException(std::string(function) + ": " + screen_error);
 	}
 	// The _copy variant makes ecCodes own its buffer, so the DuckDB vector data can be released safely.

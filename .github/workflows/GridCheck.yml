@@ -5,7 +5,12 @@
 #   idx_check:  src/include/grib2_idx.hpp and grib2_message.hpp (.idx parser, section headers)
 #   robustness_check: the same parsers and the grid validation on truncated, mutated and random input, built with
 #               AddressSanitizer and UndefinedBehaviorSanitizer so a memory error fails the run
+#   data_repr_check: src/include/grib2_message.hpp CheckDataRepresentation on every fixture (valid messages accepted,
+#               corrupt layouts and packing parameters refused), also under the sanitizers
 #   fuzz:       a short libFuzzer run of each parser (the checks above are deterministic; this explores further)
+#   decode-fuzz: a short, seeded mutation run of the ecCodes decode path (test/fuzz/eccodes_mutate.cpp); fails if ecCodes
+#               aborts, crashes or hangs on a message that passed the extension's own checks. Uses Ubuntu's ecCodes, which
+#               may differ from the version vcpkg builds into the extension.
 #
 name: Standalone C++ Checks
 on:
@@ -33,6 +38,12 @@ jobs:
           -I src/include test/cpp/robustness_check.cpp -o robustness_check
       - name: Run robustness check
         run: ./robustness_check
+      - name: Build data representation check (ASan + UBSan)
+        run: >
+          g++ -std=c++17 -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all
+          -I src/include test/cpp/data_repr_check.cpp -o data_repr_check
+      - name: Run data representation check
+        run: ./data_repr_check
 
   fuzz:
     name: Short fuzz run of the parsers
@@ -51,3 +62,25 @@ jobs:
         run: |
           mkdir -p corpus_sections && cp test/data/*.grib2 corpus_sections/
           ./fuzz_sections -max_total_time=45 -timeout=10 corpus_sections
+
+  decode-fuzz:
+    name: Short mutation run of the ecCodes decode path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ecCodes
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev
+      - name: Build the decode fuzzer
+        run: g++ -std=c++17 -O2 -g -Wall -Wextra -I src/include test/fuzz/eccodes_mutate.cpp -o eccodes_mutate -leccodes
+      - name: Mutate the test messages and decode them
+        run: |
+          for f in test/data/sample.grib2 test/data/masked_gu.grib2 fixtures/nbm_gu_msg.grib2 fixtures/nbm_pr_msg.grib2 \
+                   fixtures/nbm_complex_msg.grib2; do
+            ./eccodes_mutate "$f" 400 7 crashes
+          done
+      - name: Keep the inputs that crashed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decode-crashes
+          path: crashes/
