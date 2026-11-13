@@ -326,43 +326,44 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	unique_ptr<duckdb_re2::RE2> search;
 	if (bind_data.has_search) {
 		search = CompileSearch(bind_data.search);
-		std::vector<std::string> paths;
-		for (const auto &file : files) {
-			paths.push_back(file.path);
-		}
-		// Each message is validated as it is read, so the up-front check of the first message is skipped. Files are
-		// indexed several at a time; the results come back in path order.
-		const std::unordered_set<int64_t> wanted(bind_data.messages.begin(), bind_data.messages.end());
-		for (auto &rows : IndexFiles(fs, paths, true, false, false, Grib2IoThreads(context))) {
-			for (auto &row : rows) {
-				if (!wanted.empty() && wanted.find(row.message_number) == wanted.end()) {
+	}
+	std::vector<std::string> paths;
+	for (const auto &file : files) {
+		paths.push_back(file.path);
+	}
+	// Each message is validated as it is read, so the up-front check of the first message is skipped. Files are
+	// indexed several at a time; the results come back in path order.
+	const std::unordered_set<int64_t> wanted(bind_data.messages.begin(), bind_data.messages.end());
+	for (auto &rows : IndexFiles(fs, paths, true, false, false, Grib2IoThreads(context))) {
+		for (auto &row : rows) {
+			if (!wanted.empty() && wanted.find(row.message_number) == wanted.end()) {
+				continue;
+			}
+			if (bind_data.has_search) {
+				if (!row.inventory) {
+					throw InvalidInputException("read_grib2: search needs the .idx file that goes with " +
+					                            row.file_path +
+					                            " (it holds the variable and level names); select messages with "
+					                            "message := ... instead");
+				}
+				// Match the text as it is and with colons around it, so ":TMP:2 m above ground:" works too
+				if (!duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(*row.inventory), *search) &&
+				    !duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(":" + *row.inventory + ":"), *search)) {
 					continue;
 				}
-				if (bind_data.has_search) {
-					if (!row.inventory) {
-						throw InvalidInputException("read_grib2: search needs the .idx file that goes with " +
-						                            row.file_path +
-						                            " (it holds the variable and level names); select messages with "
-						                            "message := ... instead");
-					}
-					// Match the text as it is and with colons around it, so ":TMP:2 m above ground:" works too
-					if (!duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(*row.inventory), *search) &&
-					    !duckdb_re2::RE2::PartialMatch(duckdb_re2::StringPiece(":" + *row.inventory + ":"), *search)) {
-						continue;
-					}
-				}
-				if (row.byte_length > MAX_MESSAGE_BYTES) {
-					throw InvalidInputException(
-					    "read_grib2: " + row.file_path + ": message " + std::to_string(row.message_number) + " is " +
-					    std::to_string(row.byte_length) + " bytes, above the limit of " +
-					    std::to_string(MAX_MESSAGE_BYTES) + " (does the .idx belong to this file?)");
-				}
-				state->messages.push_back(std::move(row));
 			}
+			if (row.byte_length > MAX_MESSAGE_BYTES) {
+				throw InvalidInputException(
+				    "read_grib2: " + row.file_path + ": message " + std::to_string(row.message_number) + " is " +
+				    std::to_string(row.byte_length) + " bytes, above the limit of " +
+				    std::to_string(MAX_MESSAGE_BYTES) + " (does the .idx belong to this file?)");
+			}
+			state->messages.push_back(std::move(row));
 		}
-		state->short_names.resize(state->messages.size());
-		return state;
 	}
+	state->short_names.resize(state->messages.size());
+	return state;
+}
 
 	//! Start fetching the bytes of upcoming messages, keeping a few in flight
 	void FillPrefetch(Grib2ReadGlobalState & state) {
