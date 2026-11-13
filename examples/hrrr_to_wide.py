@@ -157,4 +157,4 @@ ORDER BY valid_time
 print(f"SQL processing completed in {perf_counter() - sql_started:.2f} seconds")
 print(f"{duckdb_df.shape[1]} columns including valid_time, {len(duckdb_df)} rows")
 print(duckdb_df.iloc[:5, :6])
-duckdb_df.to_csv(f"hrrr_{start:%Y%m%d}_{end:%Y%m%d}.csv", index=False)
+duckdb_df.to_parquet(f"hrrr_{start:%Y%m%d}_{end:%Y%m%d}.parquet", index=False)
