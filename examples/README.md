@@ -75,7 +75,8 @@ This example reads a set of HRRR cycles, aggregates the selected variables to on
 row per valid time and grid cell, and then builds a wide table for further
 analysis in Python. It is designed around the idea of reading each day once,
 keeping the raw data in DuckDB, and then restructuring it into a query-friendly
-shape without re-fetching the GRIB files.
+shape without re-fetching the GRIB files. It reports the elapsed time for the
+SQL processing pipeline, excluding CSV export.
 
 ## `struct_pack.py`: group grid cells into nested records
 
