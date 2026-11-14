@@ -5,10 +5,9 @@ or inside the bounding box that you are interested in, from local files or from 
 [NOAA National Blend of Models (NBM)](https://registry.opendata.aws/noaa-nbm/) bucket. Decoding is done by
 [ecCodes](https://github.com/ecmwf/eccodes).
 
-> **Status: early.** The extension works on local files and, through `httpfs`, on public NBM data. The current verified
-> scope is the NBM fixtures and public-bucket checks documented in this repo. The HRRR S3 path shown in the examples
-> (`s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`) is a working example target, not yet part of
-> the formally supported meteorological data matrix. The extension has not been published to the DuckDB
+> **Status: early.** The extension works on local files and, through `httpfs`, on public NBM and HRRR data. The current
+> verified scope is the NBM and HRRR fixtures and public-bucket checks documented in this repo (see
+> [What it reads](#what-it-reads)). The extension has not been published to the DuckDB
 > community-extensions repository and is not ready for general production use. See the
 > [release-readiness checklist](docs/RELEASE_READINESS.md) for what remains before release.
 
@@ -131,15 +130,18 @@ once and fetches the next few messages while it decodes the current one.
 
 ## What it reads
 
-The current verified scope is NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam.
-This is the dataset covered by the real fixture set and SQL test cases in this repository. It supports Lambert conformal,
-north polar stereographic and Mercator grids on a spherical earth, with the usual NBM scanning modes. Other grid types
+The current verified scope is NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam, and
+the HRRR CONUS surface file (`hrrr.t{HH}z.wrfsfcf00.grib2`). This is the data covered by the real fixture set and SQL test
+cases in this repository. It supports Lambert conformal, north polar stereographic and Mercator grids on a spherical
+earth, with the scanning modes of those products (HRRR rows do not alternate; NBM rows do). Other grid types
 and scanning modes are not supported. Values are decoded only for packing templates 5.0 (simple), 5.2 and 5.3 (complex, with and without spatial
 differencing); messages with another template are refused with an error, though `grib2_index` still lists them.
 
-The HRRR S3 path `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is used in the examples as
-an active future target and has been exercised manually, but it is not yet part of the documented supported-product matrix
-for release claims. Other sources and product types have not yet been verified.
+For HRRR (`s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`), three real messages are tested
+(packing 5.0 and 5.3), the Lambert math agrees with ecCodes for the HRRR grid to about 1e-13 degrees, and a full file
+has been read from S3 by hand. Only one HRRR message packed as 5.0 is in the test set, and it is a constant field, so 5.0
+with varying values is covered by the NBM-independent layout checks but not yet by a real file. Other HRRR products
+(`wrfprs`, `wrfnat`, sub-hourly, other domains) and other sources have not been verified.
 
 See [Supported inputs and operational limits](docs/OPERATIONS.md) for details about packing, inventory files, limits,
 and data that has not been tested.
@@ -190,7 +192,8 @@ dependencies, loading a local build, platform notes, and test alternatives. Test
 ## Licenses
 
 This extension is under the MIT License (see `LICENSE`). It links ecCodes (Apache License 2.0) and OpenJPEG (BSD 2-Clause);
-see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The GRIB2 files in `fixtures/` are unmodified messages from the NOAA NBM
-open data; see the [NBM data page](https://registry.opendata.aws/noaa-nbm/) for its terms.
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The GRIB2 files in `fixtures/` are unmodified messages from the NOAA NBM and
+HRRR open data (the files in `test/data/` are derived from them); see the [NBM data page](https://registry.opendata.aws/noaa-nbm/)
+and the [HRRR data page](https://registry.opendata.aws/noaa-hrrr-pds/) for their terms.
 
 Built from the [DuckDB extension template](https://github.com/duckdb/extension-template).

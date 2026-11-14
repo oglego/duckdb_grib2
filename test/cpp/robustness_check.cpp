@@ -61,9 +61,17 @@ int main() {
 
 	// --- Section parser: every truncation and many mutations of each real message ----------------------------------
 	const std::vector<std::string> messages = {
-	    "fixtures/nbm_msg.grib2",    "fixtures/nbm_complex_msg.grib2", "fixtures/nbm_gu_msg.grib2",
-	    "fixtures/nbm_hi_msg.grib2", "fixtures/nbm_pr_msg.grib2",      "fixtures/nbm_ak_msg.grib2",
-	    "test/data/sample.grib2",    "test/data/masked_gu.grib2",
+	    "fixtures/nbm_msg.grib2",
+	    "fixtures/nbm_complex_msg.grib2",
+	    "fixtures/nbm_gu_msg.grib2",
+	    "fixtures/nbm_hi_msg.grib2",
+	    "fixtures/nbm_pr_msg.grib2",
+	    "fixtures/nbm_ak_msg.grib2",
+	    "test/data/sample.grib2",
+	    "test/data/masked_gu.grib2",
+	    "fixtures/hrrr_msg90_csnow_simple_const.grib2",
+	    "fixtures/hrrr_msg166_icec_spatial.grib2",
+	    "fixtures/hrrr_msg70_snod_spatial.grib2",
 	};
 	size_t inputs = 0;
 	for (const auto &path : messages) {

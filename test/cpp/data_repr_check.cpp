@@ -90,10 +90,19 @@ static std::vector<uint8_t> BuildSimplePacked(const std::vector<uint8_t> &base, 
 }
 
 int main() {
-	const char *files[] = {"fixtures/nbm_msg.grib2",    "fixtures/nbm_complex_msg.grib2", "fixtures/nbm_ak_msg.grib2",
-	                       "fixtures/nbm_hi_msg.grib2", "fixtures/nbm_gu_msg.grib2",      "fixtures/nbm_pr_msg.grib2",
-	                       "test/data/multi.grib2",     "test/data/masked_gu.grib2",      "test/data/sample.grib2",
-	                       "test/data/stale.grib2"};
+	const char *files[] = {"fixtures/nbm_msg.grib2",
+	                       "fixtures/nbm_complex_msg.grib2",
+	                       "fixtures/nbm_ak_msg.grib2",
+	                       "fixtures/nbm_hi_msg.grib2",
+	                       "fixtures/nbm_gu_msg.grib2",
+	                       "fixtures/nbm_pr_msg.grib2",
+	                       "test/data/multi.grib2",
+	                       "test/data/masked_gu.grib2",
+	                       "test/data/sample.grib2",
+	                       "test/data/stale.grib2",
+	                       "fixtures/hrrr_msg90_csnow_simple_const.grib2",
+	                       "fixtures/hrrr_msg166_icec_spatial.grib2",
+	                       "fixtures/hrrr_msg70_snod_spatial.grib2"};
 	int messages = 0;
 	std::vector<uint8_t> complex_spatial; // template 5.3, used for the corruption cases
 	std::vector<uint8_t> complex_plain;   // template 5.2
@@ -121,7 +130,7 @@ int main() {
 			}
 		}
 	}
-	Check(messages >= 12, "expected at least 12 messages in the test files, saw " + std::to_string(messages));
+	Check(messages >= 17, "expected at least 17 messages in the test files, saw " + std::to_string(messages));
 	Check(!complex_spatial.empty() && !complex_plain.empty(), "need a 5.2 and a 5.3 message among the test files");
 
 	const struct {

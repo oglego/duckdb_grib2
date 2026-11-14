@@ -2,8 +2,8 @@
 
 //! How the extension tells cells that carry no data from cells that do.
 //!
-//! ecCodes writes a "missing value" marker into every cell that has no data, and by default that marker is 9999. Telling
-//! such cells from real ones by comparing against 9999 is wrong in two ways:
+//! ecCodes writes a "missing value" marker into every cell that has no data, and by default that marker is 9999.
+//! Telling such cells from real ones by comparing against 9999 is wrong in two ways:
 //!   * A message can mark cells missing without a bitmap: complex packing (templates 5.2 and 5.3) with missing value
 //!     management has the packed data itself flag them. ecCodes then fills those cells with 9999 too, and a decoder
 //!     that only looks at messages with a bitmap returns them as real values.

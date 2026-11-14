@@ -437,6 +437,97 @@ SELECT grib2_point_value(content, 14.9073, 145.3613) IS NULL FROM read_blob('tes
 ----
 true
 
+# Real HRRR data (provenance in fixtures/README.md): Lambert conformal 1799 x 1059 on a sphere of radius 6371229 m, rows not
+# alternating. Expected values come from ecCodes, read at exact cell centres so no nearest-cell choice is involved.
+
+# Template 5.0 (simple packing): HRRR's frozen-precipitation flag, a constant field
+query T
+SELECT regexp_extract(grib2_message_info(content), 'gridType=.*$') FROM read_blob('fixtures/hrrr_msg90_csnow_simple_const.grib2');
+----
+gridType=lambert;Ni=1799;Nj=1059;numberOfPoints=1905141;packingType=grid_simple;alternativeRowScanning=0;values=1905141;min=0.000;max=0.000
+
+query IIRRI
+SELECT count(*), count(value), min(value), max(value), count(*) FILTER (WHERE value > 0) FROM read_grib2('fixtures/hrrr_msg90_csnow_simple_const.grib2', all_cells := true);
+----
+1905141	1905141	0.000	0.000	0
+
+# Springfield, MO: cell (1023, 484), 1.16 km from the query point
+query IIRRRR
+SELECT i, j, round(lat, 3), round(lon, 3), round(value, 3), round(distance_km, 2) FROM read_grib2('fixtures/hrrr_msg90_csnow_simple_const.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}]);
+----
+1023	484	37.207	-93.305	0.000	1.160
+
+# Template 5.3 with real data: snow depth. The maximum, 46.072 m, is on Mount Rainier.
+query T
+SELECT regexp_extract(grib2_message_info(content), 'gridType=.*$') FROM read_blob('fixtures/hrrr_msg70_snod_spatial.grib2');
+----
+gridType=lambert;Ni=1799;Nj=1059;numberOfPoints=1905141;packingType=grid_complex_spatial_differencing;alternativeRowScanning=0;values=1905141;min=0.000;max=46.072
+
+query IIRRI
+SELECT count(*), count(value), min(value), max(value), count(*) FILTER (WHERE value > 0) FROM read_grib2('fixtures/hrrr_msg70_snod_spatial.grib2', all_cells := true);
+----
+1905141	1905141	0.000	46.072	5172
+
+query R
+SELECT round(sum(value), 3) FROM read_grib2('fixtures/hrrr_msg70_snod_spatial.grib2', all_cells := true);
+----
+3035.709
+
+query IIRRRI
+SELECT i, j, round(lat, 3), round(lon, 3), round(value, 3), distance_km < 0.01 FROM read_grib2('fixtures/hrrr_msg70_snod_spatial.grib2', points := [{'lat': 46.822023, 'lon': -121.728165}]);
+----
+285	920	46.822	-121.728	46.072	true
+
+# Longitudes may use either convention
+query RR
+SELECT round(grib2_point_value(content, 46.822023, -121.728165), 3), round(grib2_point_value(content, 46.822023, 238.271835), 3) FROM read_blob('fixtures/hrrr_msg70_snod_spatial.grib2');
+----
+46.072	46.072
+
+query R
+SELECT round(grib2_point_value(content, 37.2090, -93.2923), 3) FROM read_blob('fixtures/hrrr_msg70_snod_spatial.grib2');
+----
+0.000
+
+# A box around Mount Rainier: 230 cells, 30 of them with snow
+query IIIRR
+SELECT count(*), count(value), count(*) FILTER (WHERE value > 0), round(sum(value), 3), round(max(value), 3) FROM read_grib2('fixtures/hrrr_msg70_snod_spatial.grib2', bbox := [-122.0, 46.6, -121.4, 47.0]);
+----
+230	230	30	803.418	46.072
+
+# Template 5.3 at 2 bits per value: sea ice, 1 in only 11 of 1.9 million cells (all in Canada)
+query T
+SELECT regexp_extract(grib2_message_info(content), 'gridType=.*$') FROM read_blob('fixtures/hrrr_msg166_icec_spatial.grib2');
+----
+gridType=lambert;Ni=1799;Nj=1059;numberOfPoints=1905141;packingType=grid_complex_spatial_differencing;alternativeRowScanning=0;values=1905141;min=0.000;max=1.000
+
+query IIRRI
+SELECT count(*), count(value), min(value), max(value), count(*) FILTER (WHERE value > 0) FROM read_grib2('fixtures/hrrr_msg166_icec_spatial.grib2', all_cells := true);
+----
+1905141	1905141	0.000	1.000	11
+
+query IIR
+SELECT i, j, round(value, 3) FROM read_grib2('fixtures/hrrr_msg166_icec_spatial.grib2', points := [{'lat': 46.866592, 'lon': -121.786151}, {'lat': 51.512848, 'lon': -79.603713}, {'lat': 37.2090, 'lon': -93.2923}]);
+----
+284	922	1.000
+1321	1057	1.000
+1023	484	0.000
+
+# Both packings in one scan, as when reading a whole HRRR file
+query TIT
+SELECT regexp_extract(file_path, '[^/]+$'), packing_template, packing_type FROM grib2_index('fixtures/hrrr_*.grib2', details := true) ORDER BY file_path;
+----
+hrrr_msg166_icec_spatial.grib2	3	grid_complex_spatial_differencing
+hrrr_msg70_snod_spatial.grib2	3	grid_complex_spatial_differencing
+hrrr_msg90_csnow_simple_const.grib2	0	grid_simple
+
+query R
+SELECT round(value, 3) FROM read_grib2('fixtures/hrrr_*.grib2', points := [{'lat': 46.822023, 'lon': -121.728165}]) ORDER BY 1;
+----
+0.000
+0.000
+46.072
+
 # Errors
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');

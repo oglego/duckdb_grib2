@@ -17,11 +17,11 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
   linked into ecCodes but not reachable through the extension; CCSDS is not built in.
 - **Inventory files:** the NOAA-published wgrib2-style `.idx` format. Lines of the form `n.m` (several fields in one
   message) are not supported yet.
-- **Current verified data:** NBM CONUS, Alaska, Hawaii, Puerto Rico, and Guam, forecast hour 1 of the core product.
-  This is the tested matrix in this repository. The HRRR path
-  `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is a working example target and a future
-  expansion candidate, but it is not part of the formally supported dataset matrix until it has fixture coverage and
-  independent-oracle validation.
+- **Current verified data:** NBM CONUS, Alaska, Hawaii, Puerto Rico, and Guam (forecast hour 1 of the core product), and
+  the HRRR CONUS surface file `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`. This is the
+  tested matrix in this repository. For HRRR it consists of three real messages (5.0 constant field, 5.3 with 2 and 17 bits
+  per value) checked against ecCodes, and the HRRR grid (Lambert, earth shape 6, rows not alternating) in the projection
+  oracle. Not yet covered: a real 5.0 message with varying values, other HRRR products and domains, and other sources.
 
 ## Settings and limits
 

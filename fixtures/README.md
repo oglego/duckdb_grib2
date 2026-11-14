@@ -1,6 +1,6 @@
 # Fixtures
 
-Real NOAA National Blend of Models (NBM) data used for validation.
+Real NOAA National Blend of Models (NBM) and HRRR data used for validation. The HRRR messages are described at the end.
 
 | File | Description |
 |---|---|
@@ -79,3 +79,35 @@ curl -r 55669237-56258264 -o nbm_complex_msg.grib2 \
 
 Only templates 5.3 and 5.2 occur, so no JPEG 2000 or CCSDS decoding is needed for this product. It is one forecast hour of
 the core product; other products and hours may differ.
+
+## HRRR messages
+
+Three whole messages from the CONUS surface file of one HRRR run, fetched by byte range (the offsets and lengths are the
+`byte_offset` and `byte_length` reported by `grib2_index(..., details := true)`):
+
+- Dataset: [NOAA HRRR on AWS Open Data](https://registry.opendata.aws/noaa-hrrr-pds/) (`s3://noaa-hrrr-bdp-pds`). See that page
+  for terms of use.
+- Source file: `hrrr.20260602/conus/hrrr.t00z.wrfsfcf00.grib2` (run 2026-06-02 00z, forecast hour 0).
+- Grid, all three: Lambert conformal, 1799 x 1059 = 1,905,141 points, earth shape 6 (a sphere of radius 6371229 m),
+  `jScansPositively` 1, `alternativeRowScanning` 0 (rows do not alternate, unlike NBM).
+
+| File | Message | Variable, level | Bytes | Packing | What it is |
+|---|---|---|---|---|---|
+| `hrrr_msg90_csnow_simple_const.grib2` | 90 | `CSNOW`, surface | 188 | 5.0 simple, 0 bits per value | A constant field (all 0), the cheapest real 5.0 message |
+| `hrrr_msg166_icec_spatial.grib2` | 166 | `ICEC`, surface | 257 | 5.3, 2 bits per value | 1 in 11 cells (all in Canada), 0 elsewhere |
+| `hrrr_msg70_snod_spatial.grib2` | 70 | `SNOD`, surface | 22,083 | 5.3, 17 bits per value | Snow depth: 1,240 distinct values, maximum 46.07 m on Mount Rainier |
+
+To recreate one, with `OFFSET` and `LENGTH` as in this table's source (message 90: offset 52114409, length 188; message
+166: offset 138576038, length 257; message 70: offset 36517782, length 22083):
+
+```sh
+curl -r OFFSET-$((OFFSET + LENGTH - 1)) -o hrrr_msg90_csnow_simple_const.grib2 \
+  https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20260602/conus/hrrr.t00z.wrfsfcf00.grib2
+```
+
+`scripts/fetch_hrrr_fixtures.sh` does this and checks each download. NOAA keeps only a limited window of recent HRRR runs, so
+the committed files are the reference.
+
+Not covered: a 5.0 message with varying values. Real ones are large (a 1.9 million cell field needs at least about 240 KB at
+one bit per value), so none is in the repository yet.
+

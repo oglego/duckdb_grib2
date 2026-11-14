@@ -1,7 +1,0 @@
-HRRR fixtures, fetched 2026-11-14 by byte range from:
-  https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20260602/conus/hrrr.t00z.wrfsfcf00.grib2
-(run 20260602 00z, forecast hour 0, CONUS surface file; offsets and lengths are from grib2_index)
-
-  hrrr_msg90_csnow_simple_const.grib2    msg 90   CSNOW surface        5.0  offset 52114409   length 188
-  hrrr_msg166_icec_spatial_const.grib2   msg 166  ICEC  surface        5.3  offset 138576038  length 257
-  hrrr_msg70_snod_spatial.grib2          msg 70   SNOD  surface        5.3  offset 36517782   length 22083

@@ -1,7 +1,8 @@
 // Standalone check that cells with no data are recognised however the message marks them. Needs ecCodes and the
 // dependency-free headers, not DuckDB:
 //
-//   g++ -std=c++17 -O1 -g -Wall -Wextra -I src/include test/cpp/missing_value_check.cpp -o missing_value_check -leccodes
+//   g++ -std=c++17 -O1 -g -Wall -Wextra -I src/include test/cpp/missing_value_check.cpp -o missing_value_check
+//   -leccodes
 //   ./missing_value_check          (from the repository root)
 //
 // It runs the same calls as DecodeGribValues (the screen, a copied handle, Grib2UseNanForMissing, the "values" array)
@@ -93,12 +94,15 @@ struct Case {
 
 int main() {
 	const Case cases[] = {
-	    {"test/data/missing_complex.grib2", true, false},  // 5.2, flagged by the packing, no bitmap
-	    {"test/data/missing_spatial.grib2", true, false},  // 5.3, flagged by the packing, no bitmap
-	    {"test/data/real_9999.grib2", true, true},         // bitmap; real values equal to 9999
-	    {"test/data/masked_gu.grib2", true, false},        // bitmap; the original masked fixture
-	    {"fixtures/nbm_gu_msg.grib2", false, false},       // nothing missing at all
+	    {"test/data/missing_complex.grib2", true, false}, // 5.2, flagged by the packing, no bitmap
+	    {"test/data/missing_spatial.grib2", true, false}, // 5.3, flagged by the packing, no bitmap
+	    {"test/data/real_9999.grib2", true, true},        // bitmap; real values equal to 9999
+	    {"test/data/masked_gu.grib2", true, false},       // bitmap; the original masked fixture
+	    {"fixtures/nbm_gu_msg.grib2", false, false},      // nothing missing at all
 	    {"fixtures/nbm_msg.grib2", false, false},
+	    {"fixtures/hrrr_msg90_csnow_simple_const.grib2", false, false}, // real HRRR 5.0 (constant field)
+	    {"fixtures/hrrr_msg166_icec_spatial.grib2", false, false},      // real HRRR 5.3, 2 bits per value
+	    {"fixtures/hrrr_msg70_snod_spatial.grib2", false, false},       // real HRRR 5.3, 17 bits per value
 	};
 	for (const Case &c : cases) {
 		std::cout << c.path << "\n";

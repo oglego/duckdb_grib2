@@ -52,7 +52,11 @@ def report(out):
             out,
             ec.codes_get(h, "dataRepresentationTemplateNumber"),
             ec.codes_get(h, "bitmapPresent"),
-            ec.codes_get(h, "missingValueManagementUsed") if ec.codes_get(h, "dataRepresentationTemplateNumber") != 0 else "-",
+            (
+                ec.codes_get(h, "missingValueManagementUsed")
+                if ec.codes_get(h, "dataRepresentationTemplateNumber") != 0
+                else "-"
+            ),
             int(np.isnan(v).sum()),
             int((v == 9999.0).sum()),
             v.size,

@@ -267,32 +267,22 @@ Read from the community-extensions repository (`duckdb/community-extensions`) ra
 2. Release prep, then `WHERE lat/lon` pushdown, bilinear interpolation, a table-in variant for many stations, and other
    grid types (regular lat/lon for GFS).
 
-## Other sources to try later
+## Other sources
 
-Not needed yet. NBM covers the first milestones, and these are checks to run once `grib2_index()` and `read_grib2()`
-exist.
+**HRRR** (Lambert conformal, 1799 x 1059, about 3 km) is verified for the CONUS surface file
+`hrrr.t00z.wrfsfcf00.grib2` (run 2026-06-02; `fixtures/README.md` has the byte ranges). What the real messages showed:
 
-**HRRR** (Lambert conformal, 1799 x 1059, about 3 km) should work with the existing grid code. Example endpoint:
+1. `.idx` format: same `n:offset:d=YYYYMMDDHH:VAR:level:fcst:` layout as NBM; the inventory and `details := true` both work.
+2. Packing: the file mixes template 5.3 (complex with spatial differencing) and 5.0 (simple). Message 77 is one of the 5.0
+   messages (it first failed when the extension refused 5.0). Many 5.0 messages are tiny constant fields (0 bits per value,
+   188 bytes); a 5.0 message with varying values needs at least about 240 KB at 1 bit per value, and none is in the test set
+   yet.
+3. Earth shape and scanning: shape 6 (a sphere of radius 6371229 m), `jScansPositively` 1, `alternativeRowScanning` 0, in
+   contrast to NBM's shape 1 and alternating rows. The projection oracle (`test/data/grid_reference.txt`) now includes an
+   `hrrr` section; the closed-form Lambert math agrees with ecCodes to about 1e-13 degrees there.
+4. Values: `read_grib2` and `grib2_point_value` agree with ecCodes at exact cell centres (SQL tests on the three fixtures).
 
-- Index: <https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20140730/conus/hrrr.t18z.wrfnatf00.grib2.idx>
-- Data: the same URL without `.idx`
-
-Caveats about this particular example:
-
-- It is from 2014-07-30 18z, which is early HRRR. Packing and earth shape may differ from current files (an HRRR
-  dataset from that era reports a 6,367,470 m earth radius, shape 0; the extension accepts shapes 0, 1, 6 and 8).
-- `wrfnat` is the native-level product, so expect many messages. `wrfsfc` and `wrfprs` are the more common choices.
-- Its contents are unverified. The URL resolves, but it came back as binary and the `.idx` has not been inspected.
-- The bucket layout (`noaa-hrrr-bdp-pds`, `.idx` beside each file) is from this example, not yet confirmed by a listing.
-
-What to check when trying it:
-
-1. `.idx` line format versus NBM's (`n:offset:d=YYYYMMDDHH:VAR:level:fcst:`).
-2. `packingType` across messages. HRRR surface files mix template 5.3 (complex with spatial differencing) and 5.0
-   (simple), for example message 77 of `hrrr.t00z.wrfsfcf00.grib2`; both decode here, and the extension accepts exactly
-   5.0, 5.2 and 5.3. HRRR products packed with other templates (for example JPEG 2000) will be refused.
-3. `shapeOfTheEarth`, scanning flags and `alternativeRowScanning`.
-4. `grib2_point_value` against an ecCodes nearest-point lookup, as for the NBM fixtures.
+Other HRRR products (`wrfprs`, `wrfnat`), sub-hourly files and other domains (Alaska is polar stereographic) are untested.
 
 Grids not supported yet: regular lat/lon (for example GFS) is a trivial projection and cheap to add; Gaussian grids
 (for example ECMWF) are real work.

@@ -4,7 +4,7 @@
 # `ref` with the commit of this repository to publish, and open a pull request. See "Publishing" in docs/DESIGN.md.
 extension:
   name: grib2
-  description: "Query GRIB2 weather data with SQL: list messages, and read decoded values at points or in bounding boxes, from local files or object storage such as NOAA's NBM bucket"
+  description: "Query GRIB2 weather data with SQL: list messages, and read decoded values at points or in bounding boxes, from local files or object storage such as NOAA's NBM and HRRR buckets"
   version: 0.1.0
   language: C++
   build: cmake
@@ -39,5 +39,5 @@ docs:
     (`message := ...`) or by a regular expression over the inventory text (`search := ...`). Only the bytes needed are read,
     so a point from a 150 MB remote file reads about 2 MB.
 
-    Supports the Lambert conformal, polar stereographic and Mercator grids of the NOAA National Blend of Models. Decoding is
-    done by ecCodes. For more, see the [documentation](https://github.com/oglego/duckdb_grib2).
+    Supports the Lambert conformal, polar stereographic and Mercator grids of the NOAA National Blend of Models (NBM) and
+    the HRRR CONUS surface file, with packing templates 5.0, 5.2 and 5.3. Decoding is done by ecCodes. For more, see the [documentation](https://github.com/oglego/duckdb_grib2).

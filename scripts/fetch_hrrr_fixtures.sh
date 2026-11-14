@@ -121,7 +121,7 @@ mkdir -p "$OUT_DIR"
 echo
 echo "== Downloading"
 grab 52114409  188   "${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2"
-grab 138576038 257   "${OUT_DIR}/hrrr_msg166_icec_spatial_const.grib2"
+grab 138576038 257   "${OUT_DIR}/hrrr_msg166_icec_spatial.grib2"
 grab 36517782  22083 "${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
 
 REAL_FILE=""
@@ -137,7 +137,7 @@ fi
 
 echo
 echo "== Checking each file with the extension"
-FILES="${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_msg166_icec_spatial_const.grib2 ${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
+FILES="${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_msg166_icec_spatial.grib2 ${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
 [ -n "$REAL_FILE" ] && FILES="$FILES $REAL_FILE"
 for f in $FILES; do
   echo "--- $f"
@@ -155,7 +155,7 @@ echo "== Writing provenance to ${PROVENANCE}"
   echo "(run ${DATE} ${CYCLE}z, forecast hour 0, CONUS surface file; offsets and lengths are from grib2_index)"
   echo
   echo "  hrrr_msg90_csnow_simple_const.grib2    msg 90   CSNOW surface        5.0  offset 52114409   length 188"
-  echo "  hrrr_msg166_icec_spatial_const.grib2   msg 166  ICEC  surface        5.3  offset 138576038  length 257"
+  echo "  hrrr_msg166_icec_spatial.grib2   msg 166  ICEC  surface        5.3  offset 138576038  length 257"
   echo "  hrrr_msg70_snod_spatial.grib2          msg 70   SNOD  surface        5.3  offset 36517782   length 22083"
   if [ -n "$REAL_FILE" ]; then
     echo "  $(basename "$REAL_FILE")   msg ${R_MSG}  ${R_VAR} ${R_LEVEL}  5.0  offset ${R_OFFSET}  length ${R_LENGTH}"

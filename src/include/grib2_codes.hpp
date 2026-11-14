@@ -121,8 +121,8 @@ inline std::vector<double> DecodeGribValues(codes_handle *handle, const char *fu
 		throw InvalidInputException(std::string(function) + ": the message has " + std::to_string(value_count) +
 		                            " values; the limit is " + std::to_string(MAX_GRID_CELLS));
 	}
-	// Cells with no data must come back as NaN, never as ecCodes' default 9999 (see grib2_missing.hpp). Refuse to decode
-	// rather than risk returning that marker as a real value.
+	// Cells with no data must come back as NaN, never as ecCodes' default 9999 (see grib2_missing.hpp). Refuse to
+	// decode rather than risk returning that marker as a real value.
 	if (!Grib2UseNanForMissing(handle)) {
 		throw InvalidInputException(std::string(function) + ": could not set the missing value marker for decoding");
 	}

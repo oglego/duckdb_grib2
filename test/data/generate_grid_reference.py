@@ -1,7 +1,7 @@
 """Regenerate test/data/grid_reference.txt, the oracle for test/cpp/grid_check.cpp.
 
 Everything in the output comes from ecCodes (latitudes/longitudes arrays, the geography iterator and brute-force
-searches over them), never from the code under test. One section per NBM region, each with its own projection.
+searches over them), never from the code under test. One section per NBM region and one for HRRR, each with its own projection.
 
 Requires: pip install eccodes ecmwflibs numpy
 Run from the repository root.
@@ -16,6 +16,9 @@ REGIONS = [
     ("hi", "fixtures/nbm_hi_msg.grib2"),
     ("pr", "fixtures/nbm_pr_msg.grib2"),
     ("gu", "fixtures/nbm_gu_msg.grib2"),
+    # Appended last so the random cell samples of the sections above do not change. HRRR is a second Lambert domain with
+    # a different earth shape (6, a sphere of radius 6371229) and scanning (alternativeRowScanning 0).
+    ("hrrr", "fixtures/hrrr_msg70_snod_spatial.grib2"),
 ]
 OUT = "test/data/grid_reference.txt"
 rng = np.random.default_rng(42)
@@ -32,7 +35,10 @@ def section(region, path):
     ni, nj = g("Ni"), g("Nj")
     grid_type = g("gridType")
     assert g("iScansNegatively") == 0 and g("jScansPositively") == 1 and g("jPointsAreConsecutive") == 0
-    assert g("shapeOfTheEarth") == 1, "only the spherical earth with an explicit radius is handled"
+    assert g("shapeOfTheEarth") in (
+        1,
+        6,
+    ), "only a spherical earth (shape 1 explicit radius, or 6 fixed radius) is handled"
     alt = int(g("alternativeRowScanning"))
     radius = g("radius")
     common = (g("latitudeOfFirstGridPointInDegrees"), g("longitudeOfFirstGridPointInDegrees"), g("LaDInDegrees"))
