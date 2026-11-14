@@ -365,211 +365,210 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	return state;
 }
 
-	//! Start fetching the bytes of upcoming messages, keeping a few in flight
-	void FillPrefetch(Grib2ReadGlobalState & state) {
-		while (state.pending.size() < PREFETCH_MESSAGES && state.prefetch_next < state.messages.size()) {
-			const Grib2IndexRow &row = state.messages[state.prefetch_next];
-			if (!state.pending.empty() && state.pending_bytes + row.byte_length > PREFETCH_BYTE_BUDGET) {
-				break;
-			}
-			state.prefetch_next++;
-			FileSystem *fs = state.fs;
-			PendingFetch fetch;
-			fetch.length = row.byte_length;
-			fetch.bytes = std::async(state.fetch_policy,
-			                         [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
-				                         // Each fetch opens its own handle: concurrent reads on one remote handle are
-				                         // not something to rely on
-				                         const FileReader reader(*fs, path);
-				                         return reader.ReadAt(offset, length);
-			                         });
-			state.pending_bytes += row.byte_length;
-			state.pending.push_back(std::move(fetch));
+//! Start fetching the bytes of upcoming messages, keeping a few in flight
+void FillPrefetch(Grib2ReadGlobalState &state) {
+	while (state.pending.size() < PREFETCH_MESSAGES && state.prefetch_next < state.messages.size()) {
+		const Grib2IndexRow &row = state.messages[state.prefetch_next];
+		if (!state.pending.empty() && state.pending_bytes + row.byte_length > PREFETCH_BYTE_BUDGET) {
+			break;
 		}
+		state.prefetch_next++;
+		FileSystem *fs = state.fs;
+		PendingFetch fetch;
+		fetch.length = row.byte_length;
+		fetch.bytes = std::async(state.fetch_policy,
+		                         [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
+			                         // Each fetch opens its own handle: concurrent reads on one remote handle are
+			                         // not something to rely on
+			                         const FileReader reader(*fs, path);
+			                         return reader.ReadAt(offset, length);
+		                         });
+		state.pending_bytes += row.byte_length;
+		state.pending.push_back(std::move(fetch));
 	}
+}
 
-	//! Read and decode the next message and work out which cells to emit
-	void LoadMessage(ClientContext & context, const Grib2ReadBindData &bind_data, Grib2ReadGlobalState &state) {
-		const char *function = "read_grib2";
-		const Grib2IndexRow &row = state.messages[state.message_position];
-		try {
-			// Decoding is the slow step; give a cancelled query the chance to stop before the next one starts
-			context.InterruptCheck();
-			FillPrefetch(state);
-			const std::string bytes = state.pending.front().bytes.get();
-			state.pending_bytes -= state.pending.front().length;
-			state.pending.pop_front();
-			FillPrefetch(state);
-			// Without the up-front check, this is what notices an .idx that does not belong to the file
-			MessageSummary indicator;
-			size_t needed = 0;
-			std::string indicator_error;
-			if (ParseIndicator(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size(), indicator, needed,
-			                   indicator_error) != SectionParseResult::OK) {
-				throw InvalidInputException(indicator_error + " (does the .idx belong to this file?)");
-			}
-			if (static_cast<int64_t>(indicator.total_length) != row.byte_length) {
-				throw InvalidInputException("the message is " + std::to_string(indicator.total_length) +
-				                            " bytes but the index says " + std::to_string(row.byte_length) +
-				                            " (does the .idx belong to this file?)");
-			}
-			CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
-			codes_handle *h = handle.get();
+//! Read and decode the next message and work out which cells to emit
+void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Grib2ReadGlobalState &state) {
+	const char *function = "read_grib2";
+	const Grib2IndexRow &row = state.messages[state.message_position];
+	try {
+		// Decoding is the slow step; give a cancelled query the chance to stop before the next one starts
+		context.InterruptCheck();
+		FillPrefetch(state);
+		const std::string bytes = state.pending.front().bytes.get();
+		state.pending_bytes -= state.pending.front().length;
+		state.pending.pop_front();
+		FillPrefetch(state);
+		// Without the up-front check, this is what notices an .idx that does not belong to the file
+		MessageSummary indicator;
+		size_t needed = 0;
+		std::string indicator_error;
+		if (ParseIndicator(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size(), indicator, needed,
+		                   indicator_error) != SectionParseResult::OK) {
+			throw InvalidInputException(indicator_error + " (does the .idx belong to this file?)");
+		}
+		if (static_cast<int64_t>(indicator.total_length) != row.byte_length) {
+			throw InvalidInputException("the message is " + std::to_string(indicator.total_length) +
+			                            " bytes but the index says " + std::to_string(row.byte_length) +
+			                            " (does the .idx belong to this file?)");
+		}
+		CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
+		codes_handle *h = handle.get();
 
-			Grib2Grid grib_grid = MakeGrid(h, function);
-			const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
-			state.field = DecodeValues(h, function, cell_total);
-			state.alternative_rows = grib_grid.spec.alternative_rows;
-			state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
+		Grib2Grid grib_grid = MakeGrid(h, function);
+		const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
+		state.field = DecodeValues(h, function, cell_total);
+		state.alternative_rows = grib_grid.spec.alternative_rows;
+		state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
 
-			// Cell selection depends only on the grid, so keep it while messages share one
-			const bool same_grid = state.selection_spec && *state.selection_spec == grib_grid.spec;
-			state.grid = std::move(grib_grid.grid);
-			if (!same_grid) {
-				state.selection_spec = grib_grid.spec;
-				state.point_hits.clear();
-				state.box_cells.clear();
-				if (bind_data.mode == SpatialMode::POINTS) {
-					for (idx_t p = 0; p < bind_data.points.size(); p++) {
-						GridCell cell;
-						if (state.grid->NearestCell(bind_data.points[p].lat, bind_data.points[p].lon, cell)) {
-							state.point_hits.push_back({p, cell});
-						}
+		// Cell selection depends only on the grid, so keep it while messages share one
+		const bool same_grid = state.selection_spec && *state.selection_spec == grib_grid.spec;
+		state.grid = std::move(grib_grid.grid);
+		if (!same_grid) {
+			state.selection_spec = grib_grid.spec;
+			state.point_hits.clear();
+			state.box_cells.clear();
+			if (bind_data.mode == SpatialMode::POINTS) {
+				for (idx_t p = 0; p < bind_data.points.size(); p++) {
+					GridCell cell;
+					if (state.grid->NearestCell(bind_data.points[p].lat, bind_data.points[p].lon, cell)) {
+						state.point_hits.push_back({p, cell});
 					}
-				} else if (bind_data.mode == SpatialMode::BBOX) {
-					state.grid->CellsInBox(bind_data.bbox[0], bind_data.bbox[1], bind_data.bbox[2], bind_data.bbox[3],
-					                       state.box_cells);
 				}
+			} else if (bind_data.mode == SpatialMode::BBOX) {
+				state.grid->CellsInBox(bind_data.bbox[0], bind_data.bbox[1], bind_data.bbox[2], bind_data.bbox[3],
+				                       state.box_cells);
 			}
-			switch (bind_data.mode) {
-			case SpatialMode::POINTS:
-				state.cell_count = state.point_hits.size();
-				break;
-			case SpatialMode::BBOX:
-				state.cell_count = state.box_cells.size();
-				break;
-			default:
-				state.cell_count = static_cast<idx_t>(cell_total);
+		}
+		switch (bind_data.mode) {
+		case SpatialMode::POINTS:
+			state.cell_count = state.point_hits.size();
+			break;
+		case SpatialMode::BBOX:
+			state.cell_count = state.box_cells.size();
+			break;
+		default:
+			state.cell_count = static_cast<idx_t>(cell_total);
+			break;
+		}
+		state.cell_position = 0;
+		state.loaded = true;
+	} catch (std::exception &error) {
+		// what() of a DuckDB exception is JSON; the plain message reads better
+		// Keep the original kind of error (IO, out of memory, interrupt, not implemented): everything arriving here
+		// used to be reported as invalid input, which hid real failures such as a dropped connection. Errors
+		// without a DuckDB type (INVALID) are still reported as invalid input.
+		const ErrorData details(error);
+		const ExceptionType type =
+		    details.Type() == ExceptionType::INVALID ? ExceptionType::INVALID_INPUT : details.Type();
+		throw Exception(type, row.file_path + ": message " + std::to_string(row.message_number) + ": " +
+		                          details.RawMessage());
+	}
+}
+
+ResultRow MakeRow(const Grib2ReadBindData &bind_data, const Grib2ReadGlobalState &state, idx_t cell_index) {
+	ResultRow out;
+	out.message_index = state.message_position;
+	int64_t i = 0;
+	int64_t j = 0;
+	const int64_t ni = state.grid->Ni();
+	if (bind_data.mode == SpatialMode::POINTS) {
+		const PointHit &hit = state.point_hits[cell_index];
+		i = hit.cell.i;
+		j = hit.cell.j;
+		out.lat = hit.cell.lat;
+		out.lon = hit.cell.lon;
+		out.query_lat = bind_data.points[hit.point_index].lat;
+		out.query_lon = bind_data.points[hit.point_index].lon;
+		out.distance_km = hit.cell.distance_km;
+	} else {
+		// A box lists its cells; the whole grid is every index in order
+		const int64_t flat =
+		    bind_data.mode == SpatialMode::BBOX ? state.box_cells[cell_index] : static_cast<int64_t>(cell_index);
+		i = flat % ni;
+		j = flat / ni;
+		state.grid->Inverse(static_cast<double>(i), static_cast<double>(j), out.lat, out.lon);
+	}
+	out.i = i;
+	out.j = j;
+	out.value = state.field.At(RawValueIndex(ni, i, j, state.alternative_rows));
+	return out;
+}
+
+void Grib2ReadScan(ClientContext &context, TableFunctionInput &data, DataChunk &output) {
+	auto &bind_data = data.bind_data->Cast<Grib2ReadBindData>();
+	auto &state = data.global_state->Cast<Grib2ReadGlobalState>();
+
+	// Gather up to a vector of rows, moving on to the next message when the current one is exhausted
+	std::vector<ResultRow> batch;
+	batch.reserve(STANDARD_VECTOR_SIZE);
+	while (batch.size() < STANDARD_VECTOR_SIZE) {
+		if (!state.loaded) {
+			if (state.message_position >= state.messages.size()) {
 				break;
 			}
-			state.cell_position = 0;
-			state.loaded = true;
-		} catch (std::exception &error) {
-			// what() of a DuckDB exception is JSON; the plain message reads better
-			// Keep the original kind of error (IO, out of memory, interrupt, not implemented): everything arriving here
-			// used to be reported as invalid input, which hid real failures such as a dropped connection. Errors
-			// without a DuckDB type (INVALID) are still reported as invalid input.
-			const ErrorData details(error);
-			const ExceptionType type =
-			    details.Type() == ExceptionType::INVALID ? ExceptionType::INVALID_INPUT : details.Type();
-			throw Exception(type, row.file_path + ": message " + std::to_string(row.message_number) + ": " +
-			                          details.RawMessage());
+			LoadMessage(context, bind_data, state);
+		}
+		while (state.cell_position < state.cell_count && batch.size() < STANDARD_VECTOR_SIZE) {
+			batch.push_back(MakeRow(bind_data, state, state.cell_position++));
+		}
+		if (state.cell_position >= state.cell_count) {
+			// Rows already gathered refer to this message by index, so only the large buffers are released
+			state.field = DecodedValues();
+			state.loaded = false;
+			state.message_position++;
 		}
 	}
 
-	ResultRow MakeRow(const Grib2ReadBindData &bind_data, const Grib2ReadGlobalState &state, idx_t cell_index) {
-		ResultRow out;
-		out.message_index = state.message_position;
-		int64_t i = 0;
-		int64_t j = 0;
-		const int64_t ni = state.grid->Ni();
-		if (bind_data.mode == SpatialMode::POINTS) {
-			const PointHit &hit = state.point_hits[cell_index];
-			i = hit.cell.i;
-			j = hit.cell.j;
-			out.lat = hit.cell.lat;
-			out.lon = hit.cell.lon;
-			out.query_lat = bind_data.points[hit.point_index].lat;
-			out.query_lon = bind_data.points[hit.point_index].lon;
-			out.distance_km = hit.cell.distance_km;
-		} else {
-			// A box lists its cells; the whole grid is every index in order
-			const int64_t flat =
-			    bind_data.mode == SpatialMode::BBOX ? state.box_cells[cell_index] : static_cast<int64_t>(cell_index);
-			i = flat % ni;
-			j = flat / ni;
-			state.grid->Inverse(static_cast<double>(i), static_cast<double>(j), out.lat, out.lon);
+	const idx_t count = batch.size();
+	{
+		idx_t c = 0;
+		auto file_path = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto message_number = FlatVector::Writer<int64_t>(output.data[c++], count);
+		auto reference_time = FlatVector::Writer<timestamp_t>(output.data[c++], count);
+		auto valid_time = FlatVector::Writer<timestamp_t>(output.data[c++], count);
+		auto variable = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto level = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto forecast = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto qualifier = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto short_name = FlatVector::Writer<string_t>(output.data[c++], count);
+		auto lat = FlatVector::Writer<double>(output.data[c++], count);
+		auto lon = FlatVector::Writer<double>(output.data[c++], count);
+		auto i_writer = FlatVector::Writer<int64_t>(output.data[c++], count);
+		auto j_writer = FlatVector::Writer<int64_t>(output.data[c++], count);
+		auto value = FlatVector::Writer<double>(output.data[c++], count);
+		auto query_lat = FlatVector::Writer<double>(output.data[c++], count);
+		auto query_lon = FlatVector::Writer<double>(output.data[c++], count);
+		auto distance_km = FlatVector::Writer<double>(output.data[c++], count);
+
+		for (const ResultRow &row : batch) {
+			const Grib2IndexRow &message = state.messages[row.message_index];
+			WriteString(file_path, message.file_path);
+			message_number.WriteValue(message.message_number);
+			WriteOptional(reference_time, message.reference_time);
+			if (message.reference_time && message.step_hours) {
+				valid_time.WriteValue(timestamp_t(message.reference_time->value + *message.step_hours * 3600000000LL));
+			} else {
+				valid_time.WriteNull();
+			}
+			WriteOptionalString(variable, message.variable);
+			WriteOptionalString(level, message.level);
+			WriteOptionalString(forecast, message.forecast);
+			WriteOptionalString(qualifier, message.qualifier);
+			WriteOptionalString(short_name, state.short_names[row.message_index]);
+			lat.WriteValue(row.lat);
+			lon.WriteValue(row.lon);
+			i_writer.WriteValue(row.i);
+			j_writer.WriteValue(row.j);
+			WriteOptional(value, row.value);
+			WriteOptional(query_lat, row.query_lat);
+			WriteOptional(query_lon, row.query_lon);
+			WriteOptional(distance_km, row.distance_km);
 		}
-		out.i = i;
-		out.j = j;
-		out.value = state.field.At(RawValueIndex(ni, i, j, state.alternative_rows));
-		return out;
 	}
-
-	void Grib2ReadScan(ClientContext & context, TableFunctionInput & data, DataChunk & output) {
-		auto &bind_data = data.bind_data->Cast<Grib2ReadBindData>();
-		auto &state = data.global_state->Cast<Grib2ReadGlobalState>();
-
-		// Gather up to a vector of rows, moving on to the next message when the current one is exhausted
-		std::vector<ResultRow> batch;
-		batch.reserve(STANDARD_VECTOR_SIZE);
-		while (batch.size() < STANDARD_VECTOR_SIZE) {
-			if (!state.loaded) {
-				if (state.message_position >= state.messages.size()) {
-					break;
-				}
-				LoadMessage(context, bind_data, state);
-			}
-			while (state.cell_position < state.cell_count && batch.size() < STANDARD_VECTOR_SIZE) {
-				batch.push_back(MakeRow(bind_data, state, state.cell_position++));
-			}
-			if (state.cell_position >= state.cell_count) {
-				// Rows already gathered refer to this message by index, so only the large buffers are released
-				state.field = DecodedValues();
-				state.loaded = false;
-				state.message_position++;
-			}
-		}
-
-		const idx_t count = batch.size();
-		{
-			idx_t c = 0;
-			auto file_path = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto message_number = FlatVector::Writer<int64_t>(output.data[c++], count);
-			auto reference_time = FlatVector::Writer<timestamp_t>(output.data[c++], count);
-			auto valid_time = FlatVector::Writer<timestamp_t>(output.data[c++], count);
-			auto variable = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto level = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto forecast = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto qualifier = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto short_name = FlatVector::Writer<string_t>(output.data[c++], count);
-			auto lat = FlatVector::Writer<double>(output.data[c++], count);
-			auto lon = FlatVector::Writer<double>(output.data[c++], count);
-			auto i_writer = FlatVector::Writer<int64_t>(output.data[c++], count);
-			auto j_writer = FlatVector::Writer<int64_t>(output.data[c++], count);
-			auto value = FlatVector::Writer<double>(output.data[c++], count);
-			auto query_lat = FlatVector::Writer<double>(output.data[c++], count);
-			auto query_lon = FlatVector::Writer<double>(output.data[c++], count);
-			auto distance_km = FlatVector::Writer<double>(output.data[c++], count);
-
-			for (const ResultRow &row : batch) {
-				const Grib2IndexRow &message = state.messages[row.message_index];
-				WriteString(file_path, message.file_path);
-				message_number.WriteValue(message.message_number);
-				WriteOptional(reference_time, message.reference_time);
-				if (message.reference_time && message.step_hours) {
-					valid_time.WriteValue(
-					    timestamp_t(message.reference_time->value + *message.step_hours * 3600000000LL));
-				} else {
-					valid_time.WriteNull();
-				}
-				WriteOptionalString(variable, message.variable);
-				WriteOptionalString(level, message.level);
-				WriteOptionalString(forecast, message.forecast);
-				WriteOptionalString(qualifier, message.qualifier);
-				WriteOptionalString(short_name, state.short_names[row.message_index]);
-				lat.WriteValue(row.lat);
-				lon.WriteValue(row.lon);
-				i_writer.WriteValue(row.i);
-				j_writer.WriteValue(row.j);
-				WriteOptional(value, row.value);
-				WriteOptional(query_lat, row.query_lat);
-				WriteOptional(query_lon, row.query_lon);
-				WriteOptional(distance_km, row.distance_km);
-			}
-		}
-		output.SetChildCardinality(count);
-	}
+	output.SetChildCardinality(count);
+}
 
 } // namespace
 
