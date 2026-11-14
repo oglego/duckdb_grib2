@@ -133,7 +133,8 @@ once and fetches the next few messages while it decodes the current one.
 The current verified scope is NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam.
 This is the dataset covered by the real fixture set and SQL test cases in this repository. It supports Lambert conformal,
 north polar stereographic and Mercator grids on a spherical earth, with the usual NBM scanning modes. Other grid types
-and scanning modes are not supported.
+and scanning modes are not supported. Values are decoded only for packing templates 5.0 (simple), 5.2 and 5.3 (complex, with and without spatial
+differencing); messages with another template are refused with an error, though `grib2_index` still lists them.
 
 The HRRR S3 path `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is used in the examples as
 an active future target and has been exercised manually, but it is not yet part of the documented supported-product matrix

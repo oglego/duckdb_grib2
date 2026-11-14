@@ -9,9 +9,12 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
   Guam), on a spherical earth, with the usual scanning mode (rows stored west to east and south to north, with or without
   alternating row direction). Other grid types (for example regular latitude/longitude, as in GFS), ellipsoidal earths,
   south polar grids, and other scanning modes are not supported.
-- **Packing:** ecCodes decodes the values. The packing templates exercised by the tests are 5.3 (complex with spatial
-  differencing) and 5.2 (complex). Other templates are passed to ecCodes but are not tested here. JPEG 2000 support
-  (OpenJPEG) is built in but untested; CCSDS is not built in.
+- **Packing:** ecCodes decodes the values, but only for packing templates 5.0 (simple), 5.2 (complex) and 5.3 (complex with
+  spatial differencing). NBM uses 5.2 and 5.3 and HRRR uses 5.0 and 5.3, and the extension checks all three layouts in
+  depth before ecCodes sees the message. A message with any other template (5.40 JPEG 2000, 5.42 CCSDS, ...) is refused by `read_grib2`,
+  `grib2_message_info` and `grib2_point_value` with an error naming the template. `grib2_index` still lists such
+  messages and reports their `packing_template`, so you can see what a file holds. JPEG 2000 support (OpenJPEG) is
+  linked into ecCodes but not reachable through the extension; CCSDS is not built in.
 - **Inventory files:** the NOAA-published wgrib2-style `.idx` format. Lines of the form `n.m` (several fields in one
   message) are not supported yet.
 - **Current verified data:** NBM CONUS, Alaska, Hawaii, Puerto Rico, and Guam, forecast hour 1 of the core product.
@@ -41,6 +44,7 @@ outside the supported range is left unset, so `valid_time` is NULL:
 | Grid size (`Ni x Nj`) | 250 million cells |
 | `search` pattern length | 1024 characters |
 | Message bytes held in flight by prefetching | 128 MiB (at least one message) |
+| Packing templates decoded | 5.0, 5.2 and 5.3 only |
 | Grid or data points a message may claim (checked before ecCodes sees it) | 250 million |
 | Message length field | 2^62 (far above any real message; larger is refused) |
 | Forecast step read from an `.idx` line | 0 to 1,000,000 hours (otherwise `valid_time` is NULL) |
@@ -50,7 +54,9 @@ the limit are rejected rather than producing incorrect or non-finite coordinates
 
 ## Input caveats
 
-- **Untrusted input:** the `.idx` and section-header parsers are covered by sanitizer and fuzz runs in CI. ecCodes parses
+- **Untrusted input:** the `.idx` and section-header parsers are covered by sanitizer and fuzz runs in CI, and only the
+  two packing templates the extension validates in depth are passed to ecCodes for decoding. (`grib2_index(...,
+  details := true)` still gives ecCodes a short, unscreened message prefix to read names and grid keys.) ecCodes parses
   the full message and is not fuzzed here. Read files you trust, or run DuckDB where a crash is contained, when the source
   is not under your control. Malformed messages usually produce an error, but ecCodes could still crash.
 - **URLs with query strings:** presigned URLs do not get a sidecar lookup because `.idx` is appended to the whole URL.

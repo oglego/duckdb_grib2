@@ -64,6 +64,31 @@ static void Put32(std::vector<uint8_t> &msg, size_t at, uint32_t value) {
 	}
 }
 
+//! Rebuilds a message with a section 5 of template 5.0 (simple packing) and a section 7 of `payload_bytes` zero bytes,
+//! keeping sections 0-4 and 6 of `base`. Only the screen sees these messages, so the payload need not decode.
+static std::vector<uint8_t> BuildSimplePacked(const std::vector<uint8_t> &base, uint32_t values, uint8_t bits,
+                                              size_t payload_bytes) {
+	const size_t s5 = FindSection(base, 5), s6 = FindSection(base, 6), s7 = FindSection(base, 7);
+	std::vector<uint8_t> msg(base.begin(), base.begin() + s5);
+	std::vector<uint8_t> section5(21, 0);
+	Put32(section5, 0, 21);
+	section5[4] = 5;
+	Put32(section5, 5, values);
+	// octets 10-11 template 0 and 12-18 reference value, scale factors: left zero
+	section5[19] = bits;
+	msg.insert(msg.end(), section5.begin(), section5.end());
+	msg.insert(msg.end(), base.begin() + s6, base.begin() + s7);
+	std::vector<uint8_t> section7(5 + payload_bytes, 0);
+	Put32(section7, 0, static_cast<uint32_t>(section7.size()));
+	section7[4] = 7;
+	msg.insert(msg.end(), section7.begin(), section7.end());
+	msg.insert(msg.end(), {'7', '7', '7', '7'});
+	for (int b = 0; b < 8; b++) { // total length in section 0, octets 9-16
+		msg[8 + b] = static_cast<uint8_t>(static_cast<uint64_t>(msg.size()) >> (8 * (7 - b)));
+	}
+	return msg;
+}
+
 int main() {
 	const char *files[] = {"fixtures/nbm_msg.grib2",    "fixtures/nbm_complex_msg.grib2", "fixtures/nbm_ak_msg.grib2",
 	                       "fixtures/nbm_hi_msg.grib2", "fixtures/nbm_gu_msg.grib2",      "fixtures/nbm_pr_msg.grib2",
@@ -213,6 +238,37 @@ int main() {
 			std::vector<uint8_t> msg = masked;
 			msg[section6 + 4] = 9;
 			Check(!Accepted(msg, error), "an unknown section number was not refused");
+		}
+	}
+	{ // template 5.0 (simple packing): accepted when its declared counts fit the data section, refused otherwise
+		const std::vector<uint8_t> base = ReadFile("fixtures/nbm_msg.grib2");
+		Check(!base.empty(), "cannot read fixtures/nbm_msg.grib2");
+		const uint32_t values = 1000;
+		std::string error;
+		Check(Accepted(BuildSimplePacked(base, values, 8, values), error), "valid 5.0 message refused: " + error);
+		Check(Accepted(BuildSimplePacked(base, values, 12, values * 12 / 8), error),
+		      "valid 5.0 12-bit refused: " + error);
+		Check(Accepted(BuildSimplePacked(base, values, 0, 0), error), "constant-field 5.0 message refused: " + error);
+		error.clear();
+		Check(!Accepted(BuildSimplePacked(base, values, 8, values - 1), error),
+		      "5.0 with a short data section accepted");
+		Check(error.find("too short") != std::string::npos, "unhelpful error for short 5.0 data: " + error);
+		Check(!Accepted(BuildSimplePacked(base, values, 65, values * 9), error), "5.0 with 65 bits per value accepted");
+		Check(!Accepted(BuildSimplePacked(base, 0xFFFFFFFFu, 64, 1024), error), "5.0 with 4 billion values accepted");
+	}
+	{ // packing templates the screen cannot validate in depth never reach ecCodes
+		const std::vector<uint8_t> valid = ReadFile("fixtures/nbm_msg.grib2");
+		Check(!valid.empty(), "cannot read fixtures/nbm_msg.grib2");
+		const size_t section5 = FindSection(valid, 5);
+		Check(section5 != 0, "no section 5 in fixtures/nbm_msg.grib2");
+		for (const int tpl : {1, 4, 40, 41, 42, 50, 61, 200, 65535}) {
+			std::vector<uint8_t> msg = valid;
+			msg[section5 + 9] = static_cast<uint8_t>(tpl >> 8);
+			msg[section5 + 10] = static_cast<uint8_t>(tpl & 0xFF);
+			std::string error;
+			Check(!Accepted(msg, error), "packing template 5." + std::to_string(tpl) + " was not refused");
+			Check(error.find("packing template") != std::string::npos,
+			      "unhelpful error for template " + std::to_string(tpl) + ": " + error);
 		}
 	}
 	std::cout << "checks=" << checks << " messages=" << messages << " failures=" << failures << "\n";

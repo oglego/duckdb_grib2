@@ -169,7 +169,8 @@ Rows come from the first of these that applies:
 
 Columns that do not apply to a mode are NULL. `packing_type` uses ecCodes' names; each is checked against ecCodes in
 `test/cpp/idx_check.cpp` (nine gridded templates, including JPEG 2000 and CCSDS), and unknown templates show as
-`template N`. All reads go through DuckDB's file system, so `s3://` and `https://` should work once `httpfs` is loaded.
+`template N`. (Listing a template here does not mean it can be decoded: `read_grib2` accepts only 5.0, 5.2 and 5.3.) All
+reads go through DuckDB's file system, so `s3://` and `https://` should work once `httpfs` is loaded.
 That has not been tried yet; the tests use local files only.
 
 SQL tests in `test/sql/grib2.test` cover the sidecar, hopping, details, globs, and the error cases (missing file, not a
@@ -278,8 +279,9 @@ Caveats about this particular example:
 What to check when trying it:
 
 1. `.idx` line format versus NBM's (`n:offset:d=YYYYMMDDHH:VAR:level:fcst:`).
-2. `packingType` across messages. One third-party HRRR decoder describes templates 5.3 (complex with spatial
-   differencing) and 5.0 (simple); only 5.3 is proven here.
+2. `packingType` across messages. HRRR surface files mix template 5.3 (complex with spatial differencing) and 5.0
+   (simple), for example message 77 of `hrrr.t00z.wrfsfcf00.grib2`; both decode here, and the extension accepts exactly
+   5.0, 5.2 and 5.3. HRRR products packed with other templates (for example JPEG 2000) will be refused.
 3. `shapeOfTheEarth`, scanning flags and `alternativeRowScanning`.
 4. `grib2_point_value` against an ecCodes nearest-point lookup, as for the NBM fixtures.
 

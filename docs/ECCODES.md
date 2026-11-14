@@ -37,7 +37,10 @@ message loading, and row production:
 3. **Create and inspect an ecCodes handle.** `OpenGribMessage` calls
    `codes_handle_new_from_message_copy`. The copy gives the handle its own message buffer. A small pre-check and
    section/data-representation checks are performed first to reject obvious non-GRIB input and several malformed or
-   unreasonably large declarations before ecCodes parses the full message.
+   unreasonably large declarations before ecCodes parses the full message. Only packing templates 5.0, 5.2 and 5.3 pass
+   this screen; a message with any other template is refused before ecCodes is called (`IsScreenedPackingTemplate` in
+   `src/include/grib2_message.hpp`). This covers decoding only: the `details := true` path of `grib2_index` passes
+   a short prefix of each message to ecCodes without this screen.
 4. **Build the supported grid.** `MakeGrid` reads the grid keys listed below, validates them, and constructs the
    extension's spherical Lambert conformal, Mercator, or north polar-stereographic projection. Other grid types,
    scanning arrangements, Earth shapes, and south-polar stereographic grids are rejected as unsupported.

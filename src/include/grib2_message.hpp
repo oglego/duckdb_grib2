@@ -149,6 +149,43 @@ inline bool MessageLengthWithinFile(uint64_t total_length, int64_t offset, int64
 	return true;
 }
 
+//! Packing (data representation) templates that may reach ecCodes' decoder: 5.0 simple, 5.2 complex and 5.3 complex
+//! with spatial differencing. Each has a layout check in CheckDataRepresentation (declared counts and widths against
+//! the size of the data section) and has been decoded successfully on real data (NBM uses 5.2 and 5.3, HRRR uses 5.0
+//! and 5.3). ecCodes trusts its input, so a message with any other template is refused here rather than "left to
+//! ecCodes". Widening this list needs a layout check, corrupt-input tests and a real-data fixture first (see
+//! docs/RELEASE_READINESS.md).
+static const int SCREENED_PACKING_TEMPLATES[] = {0, 2, 3};
+
+inline bool IsScreenedPackingTemplate(int data_template) {
+	for (const int screened : SCREENED_PACKING_TEMPLATES) {
+		if (data_template == screened) {
+			return true;
+		}
+	}
+	return false;
+}
+
+inline std::string ScreenedPackingTemplateList() {
+	std::string list;
+	const size_t count = sizeof(SCREENED_PACKING_TEMPLATES) / sizeof(SCREENED_PACKING_TEMPLATES[0]);
+	for (size_t i = 0; i < count; i++) {
+		list += (i == 0 ? "5." : (i + 1 == count ? " and 5." : ", 5.")) + std::to_string(SCREENED_PACKING_TEMPLATES[i]);
+	}
+	return list;
+}
+
+inline bool CheckPackingTemplateSupported(const MessageSummary &summary, std::string &error) {
+	if (IsScreenedPackingTemplate(summary.data_template)) {
+		return true;
+	}
+	const char *name = DataTemplateName(summary.data_template);
+	error = "packing template 5." + std::to_string(summary.data_template) +
+	        (name ? std::string(" (") + name + ")" : "") + " is not supported (only " + ScreenedPackingTemplateList() +
+	        " are)";
+	return false;
+}
+
 //! Refuse messages that claim more grid or data points than the extension will decode. ecCodes sizes its buffers from
 //! these counts, so a corrupt or hostile count must be stopped before the message reaches it.
 inline bool CheckMessageCounts(const MessageSummary &summary, std::string &error) {
@@ -398,7 +435,8 @@ inline bool ScreenMessage(const uint8_t *data, size_t size, std::string &error) 
 	default: // INVALID: the parser has set the error
 		return false;
 	}
-	return CheckMessageCounts(summary, error) && CheckDataRepresentation(data, size, summary, error);
+	return CheckPackingTemplateSupported(summary, error) && CheckMessageCounts(summary, error) &&
+	       CheckDataRepresentation(data, size, summary, error);
 }
 
 } // namespace duckdb

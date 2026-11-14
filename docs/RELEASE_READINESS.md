@@ -16,8 +16,11 @@ complete and its evidence is reviewed.
   backtracking-time blowups; regression tests cover invalid boxes and unsupported regex syntax.
 - [ ] **Test query resource limits under adversarial inputs.** Exercise documented size, memory, cancellation, and
   concurrency limits with hostile or malformed inputs.
-- [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, but
-  ecCodes' full-message decoder is not fuzzed here and may crash on malformed input. Establish a supported ecCodes
+- [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, and
+  only packing templates 5.0, 5.2 and 5.3 are allowed through to ecCodes (all others are refused up front). ecCodes'
+  full-message decoder is still only mutation-tested against the distribution's ecCodes rather than the vendored
+  version, and may crash on malformed input. Fuzzing the vendored build is deferred (it needs ecCodes built from source
+  in CI). Establish a supported ecCodes
   version/update policy, exercise malformed-message cases, and document an agreed risk/containment policy before
   recommending use with data from untrusted sources.
 - [ ] **Finish operational release documentation.** Document the stable function/API compatibility policy, supported
