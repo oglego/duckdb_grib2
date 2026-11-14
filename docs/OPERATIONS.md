@@ -64,8 +64,9 @@ the limit are rejected rather than producing incorrect or non-finite coordinates
 - **Files without an `.idx`:** the file is walked message by message. Each message must fit in the remainder of the file
   and be at least 20 bytes; a message whose length runs past the end is reported as truncated.
 - **Empty message list:** `message := []` is an error. Leave `message` out to read every message.
-- **Missing values:** with a bitmap, a cell whose decoded value exactly matches the message's missing-value marker (9999
-  unless the message says otherwise) is returned as NULL.
+- **Missing values:** a cell with no data is returned as NULL, whether a bitmap masks it or complex packing (5.2, 5.3)
+  flags it as missing. The extension has ecCodes decode such cells as NaN rather than its default 9999, so a real value of
+  exactly 9999 is kept.
 - **Errors and cancellation:** file read errors preserve their DuckDB error type and name the file and message number.
   `read_grib2` decodes on one thread and checks for cancellation between messages.
 

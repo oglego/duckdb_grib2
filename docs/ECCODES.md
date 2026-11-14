@@ -51,8 +51,9 @@ message loading, and row production:
 6. **Select cells and map values.** The extension's own grid code calculates cell coordinates and chooses the nearest
    cell(s), cells inside a bounding box, or every cell. For alternating row scanning, `RawValueIndex` maps a canonical
    `(i, j)` cell to the stored position in ecCodes' `values` array. The decoded value count must equal `Ni * Nj`.
-7. **Emit rows.** DuckDB receives one row per selected cell per message. A bitmap-marked cell whose value equals the
-   message's `missingValue` is emitted with a NULL `value`; points outside the grid emit no row.
+7. **Emit rows.** DuckDB receives one row per selected cell per message. A cell with no data is emitted with a
+   NULL `value`; points outside the grid emit no row. ecCodes is asked to write NaN into cells with no data (see the
+   `missingValue` key below), so a NaN in the decoded values is the only thing that marks one.
 
 ## ecCodes keys used by `read_grib2`
 
@@ -71,8 +72,7 @@ or unreadable key produces an error; optional keys use the noted fallback.
 | `alternativeRowScanning` | Whether alternate rows are reversed in the stored value array; defaults to 0 if unavailable. |
 | `LoVInDegrees`, `Latin1InDegrees`, `Latin2InDegrees` | Lambert conformal orientation and standard parallels. Required for Lambert grids. |
 | `southPoleOnProjectionPlane`, `orientationOfTheGridInDegrees` | Rejects south-polar grids and configures north polar stereographic orientation. Both are required for that grid type. |
-| `bitmapPresent` | Identifies messages with a bitmap; defaults to 0 if unavailable. |
-| `missingValue` | Identifies the bitmap's decoded missing marker; defaults to 9999 if unavailable. |
+| `missingValue` | Written, not read: set to NaN before the values are decoded, so cells with no data (masked by a bitmap or flagged by complex packing) come back as NaN and real values equal to ecCodes' default 9999 are kept. Decoding is refused if ecCodes rejects the key. |
 | `shortName` | Populates the output `short_name`; unavailable keys result in NULL. |
 
 `grib2_index` metadata such as `variable`, `level`, `forecast`, and `qualifier` comes from the NOAA-style `.idx` text

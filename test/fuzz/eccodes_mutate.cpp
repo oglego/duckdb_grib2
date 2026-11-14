@@ -12,6 +12,7 @@
 // Exit status of the fuzzer is 1 when any input made ecCodes crash, exit or hang after passing the extension's checks.
 
 #include "grib2_message.hpp"
+#include "grib2_missing.hpp"
 
 #include <eccodes.h>
 
@@ -223,6 +224,11 @@ void Stage(const char *name, const char *detail = "") {
 	}
 	if (count > static_cast<size_t>(MAX_GRID_CELLS)) {
 		_exit(TOO_MANY_VALUES);
+	}
+	// As in DecodeGribValues: cells with no data are decoded as NaN
+	Stage("codes_set_double", "missingValue");
+	if (!Grib2UseNanForMissing(h)) {
+		_exit(DECODE_ERROR);
 	}
 	std::vector<double> values(count);
 	Stage("codes_get_double_array", "values");

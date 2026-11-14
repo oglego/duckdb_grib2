@@ -14,6 +14,11 @@ complete and its evidence is reviewed.
 - [x] **Validate bounding boxes and bound search matching.** Bounding boxes now reject non-finite coordinates and
   longitudes outside -360 to 360 before grid selection. `search` now uses DuckDB's RE2 engine, avoiding
   backtracking-time blowups; regression tests cover invalid boxes and unsupported regex syntax.
+- [x] **Recognise cells with no data without relying on 9999.** ecCodes fills them with 9999 however the message marks
+  them. The extension used to treat 9999 as missing only when a bitmap was present, which returned cells flagged by
+  complex packing (5.2, 5.3, no bitmap) as real 9999s, and would have masked genuine values of exactly 9999. It now has
+  ecCodes decode them as NaN. Fixtures and tests cover both cases (`test/cpp/missing_value_check.cpp`, SQL tests). Not
+  yet exercised against the ecCodes the extension vendors (2.47.0); the CI check uses Ubuntu's ecCodes.
 - [ ] **Test query resource limits under adversarial inputs.** Exercise documented size, memory, cancellation, and
   concurrency limits with hostile or malformed inputs.
 - [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, and

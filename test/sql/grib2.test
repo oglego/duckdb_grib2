@@ -373,6 +373,70 @@ SELECT message_number, value IS NULL FROM read_grib2('test/data/masked_gu.grib2'
 ----
 1	true
 
+# Cells with no data are recognised however the message marks them (test/data/generate_missing_value_samples.py).
+# ecCodes fills them with 9999 in every case, so the extension must not rely on a bitmap being present or on 9999 never
+# being real. The same 400-cell block as above is empty in each file; expected values come from ecCodes reading the files.
+
+# Template 5.2 (complex packing) with missing value management and NO bitmap: the packing itself flags the 400 cells.
+# Counting them as real values would give a max of 9999 and 37249 values.
+query IIRRR
+SELECT count(*), count(value), sum(value), min(value), max(value) FROM read_grib2('test/data/missing_complex.grib2', all_cells := true);
+----
+37249	36849	40963337.000	503.000	1809.000
+
+query I
+SELECT regexp_extract(grib2_message_info(content), 'min=[^;]*;max=.*$') FROM read_blob('test/data/missing_complex.grib2');
+----
+min=503.000;max=1809.000
+
+query I
+SELECT grib2_point_value(content, 14.9073, 145.3613) IS NULL FROM read_blob('test/data/missing_complex.grib2');
+----
+true
+
+query I
+SELECT round(grib2_point_value(content, 13.818, 147.0361), 1) FROM read_blob('test/data/missing_complex.grib2');
+----
+969.0
+
+# The same with template 5.3 (complex packing with spatial differencing)
+query IIRRR
+SELECT count(*), count(value), sum(value), min(value), max(value) FROM read_grib2('test/data/missing_spatial.grib2', all_cells := true);
+----
+37249	36849	40963337.000	503.000	1809.000
+
+query I
+SELECT regexp_extract(grib2_message_info(content), 'min=[^;]*;max=.*$') FROM read_blob('test/data/missing_spatial.grib2');
+----
+min=503.000;max=1809.000
+
+query I
+SELECT grib2_point_value(content, 14.9304, 145.3613) IS NULL FROM read_blob('test/data/missing_spatial.grib2');
+----
+true
+
+query I
+SELECT round(grib2_point_value(content, 14.8148, 146.5576), 1) FROM read_blob('test/data/missing_spatial.grib2');
+----
+678.0
+
+# A bitmap masks the block, and every other cell is a real value of exactly 9999. Treating 9999 as missing would turn
+# the whole grid into NULLs.
+query IIRR
+SELECT count(*), count(value), min(value), max(value) FROM read_grib2('test/data/real_9999.grib2', all_cells := true);
+----
+37249	36849	9999.000	9999.000
+
+query I
+SELECT grib2_point_value(content, 13.818, 147.0361) FROM read_blob('test/data/real_9999.grib2');
+----
+9999.0
+
+query I
+SELECT grib2_point_value(content, 14.9073, 145.3613) IS NULL FROM read_blob('test/data/real_9999.grib2');
+----
+true
+
 # Errors
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');

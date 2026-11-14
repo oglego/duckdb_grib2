@@ -182,9 +182,18 @@ sidecar and an independent walk through all 154 CONUS messages agree on every of
 `fixtures/README.md`.
 
 **Masked cells.** Real NBM messages do not always have bitmaps (none of the fixtures here do), so
-`test/data/masked_gu.grib2` is a synthetic Guam message with a bitmap masking 400 cells. ecCodes fills masked cells with
-its missing value (9999). `grib2_point_value` returns NULL for them and `grib2_message_info` leaves them out of min and
-max; `read_grib2` must do the same.
+`test/data/masked_gu.grib2` is a synthetic Guam message with a bitmap masking 400 cells. `grib2_point_value` returns NULL for
+masked cells and `grib2_message_info` leaves them out of min and max; `read_grib2` does the same.
+
+How a cell with no data is recognised matters. ecCodes fills such cells with a marker, 9999 by default, and two things
+make comparing against 9999 wrong. A message can flag missing cells without a bitmap: complex packing (templates 5.2 and
+5.3) with missing value management marks them in the packed data, and ecCodes then writes 9999 into them just as for a
+bitmap, so a decoder that looks for 9999 only when a bitmap is present returns them as real values. And a real value of
+exactly 9999 (a visibility in metres, say) cannot be told from the marker. So the decoder sets ecCodes' `missingValue` to
+NaN before reading the values (`src/include/grib2_missing.hpp`); a NaN in the decoded values means "no data" and nothing
+else, because GRIB2 packing cannot store one. `test/data/missing_complex.grib2`, `missing_spatial.grib2` and
+`real_9999.grib2` cover the three cases, and `test/cpp/missing_value_check.cpp` replays the old rule against them to prove
+they still tell the two approaches apart.
 
 ## `read_grib2()` as built
 

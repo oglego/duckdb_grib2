@@ -13,6 +13,7 @@
 
 #include "grib2_grid.hpp"
 #include "grib2_message.hpp"
+#include "grib2_missing.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -120,6 +121,11 @@ inline std::vector<double> DecodeGribValues(codes_handle *handle, const char *fu
 		throw InvalidInputException(std::string(function) + ": the message has " + std::to_string(value_count) +
 		                            " values; the limit is " + std::to_string(MAX_GRID_CELLS));
 	}
+	// Cells with no data must come back as NaN, never as ecCodes' default 9999 (see grib2_missing.hpp). Refuse to decode
+	// rather than risk returning that marker as a real value.
+	if (!Grib2UseNanForMissing(handle)) {
+		throw InvalidInputException(std::string(function) + ": could not set the missing value marker for decoding");
+	}
 	std::vector<double> values(value_count);
 	if (value_count > 0 && codes_get_double_array(handle, "values", values.data(), &value_count) != CODES_SUCCESS) {
 		throw InvalidInputException(std::string(function) + ": failed to decode values (unsupported packing?)");
@@ -128,18 +134,16 @@ inline std::vector<double> DecodeGribValues(codes_handle *handle, const char *fu
 	return values;
 }
 
-//! The decoded "values" of a message with what is needed to tell cells masked out by a bitmap from real ones.
+//! The decoded "values" of a message. Cells with no data (masked by a bitmap, or flagged missing by the packing itself)
+//! are NaN, see grib2_missing.hpp.
 struct DecodedValues {
 	//! In ecCodes' stored order, see RawValueIndex()
 	std::vector<double> values;
-	bool has_bitmap = false;
-	//! What ecCodes writes into masked cells (its default is 9999)
-	double missing_value = 9999.0;
 
-	bool IsMasked(double value) const {
-		return has_bitmap && value == missing_value;
+	static bool IsMasked(double value) {
+		return Grib2IsMissingValue(value);
 	}
-	//! The value at a raw index, or nothing for a masked cell
+	//! The value at a raw index, or nothing for a cell with no data
 	optional<double> At(int64_t raw_index) const {
 		const double value = values[static_cast<size_t>(raw_index)];
 		if (IsMasked(value)) {
@@ -159,8 +163,6 @@ inline DecodedValues DecodeValues(codes_handle *handle, const char *function, in
 		                            std::to_string(result.values.size()) + " values but its grid has " +
 		                            std::to_string(expected_cells) + " cells");
 	}
-	result.has_bitmap = Grib2LongKeyOrDefault(handle, "bitmapPresent", 0) != 0;
-	result.missing_value = Grib2OptionalDouble(handle, "missingValue").value_or(9999.0);
 	return result;
 }
 

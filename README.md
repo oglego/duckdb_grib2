@@ -83,7 +83,8 @@ when the forecast is not a plain `anl` or `N hour fcst`), `variable`, `level`, `
 sidecar, NULL without one), `short_name` (ecCodes), `lat`, `lon`, `i`, `j`, `value`, and in `points` mode `query_lat`,
 `query_lon` and `distance_km`, so results join back to a table of stations.
 
-- Cells masked out by a bitmap have a NULL `value`.
+- Cells with no data have a NULL `value`, whether a bitmap masks them or the packing itself flags them as missing. A real
+  value of exactly 9999 is kept.
 - A point outside a message's grid produces no row for that message.
 - Rows come back in a fixed order: files in path order, messages in file order, and within a message in the order of
   the points or in grid order.

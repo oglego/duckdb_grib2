@@ -61,7 +61,7 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 	bool any_value = false;
 	double min_value = 0;
 	double max_value = 0;
-	// Cells masked out by a bitmap come back as the missing value; leave them out of min and max
+	// Cells with no data come back as NaN; leave them out of min and max
 	for (const double value : field.values) {
 		if (field.IsMasked(value)) {
 			continue;
