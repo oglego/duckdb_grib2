@@ -1,5 +1,14 @@
 #pragma once
 
+//! GRIB2 ecCodes integration helpers for the DuckDB extension.
+//!
+//! This file contains the low-level helpers used to read and validate GRIB2 message
+//! content from ecCodes. It checks that incoming buffers are genuine GRIB payloads,
+//! retrieves metadata such as grid definitions and missing-value markers, decodes the
+//! grid cell values, and builds the projection geometry needed to map the data back to
+//! geographic coordinates. These utilities are intended to be shared by the extension's
+//! scalar and table functions that ingest GRIB2 data and expose it as DuckDB values.
+
 // Small helpers around the ecCodes C API shared by the extension's functions.
 
 #include "grib2_grid.hpp"

@@ -5,9 +5,12 @@ Do not describe the extension as production-ready or publish it for general use 
 complete and its evidence is reviewed.
 
 - [ ] **Define and verify the supported meteorological data matrix.** Document supported sources, GRIB2 grid templates,
-  Earth shapes, scanning modes, packing templates, and forecast/product types. Expand independent-oracle tests beyond
-  the current NBM forecast-hour-1 fixtures for every combination claimed as supported; explicitly keep unsupported
-  combinations out of production claims until tested.
+  Earth shapes, scanning modes, packing templates, and forecast/product types. The repository currently has real fixture
+  and SQL coverage for NBM forecast-hour-1 core products; the HRRR S3 path
+  `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is an active future target and should remain
+  out of the formally supported matrix until it has fixture coverage and independent-oracle validation. Expand
+  independent-oracle tests beyond the current NBM fixtures for every combination claimed as supported; explicitly keep
+  unsupported combinations out of production claims until tested.
 - [x] **Validate bounding boxes and bound search matching.** Bounding boxes now reject non-finite coordinates and
   longitudes outside -360 to 360 before grid selection. `search` now uses DuckDB's RE2 engine, avoiding
   backtracking-time blowups; regression tests cover invalid boxes and unsupported regex syntax.
@@ -17,10 +20,6 @@ complete and its evidence is reviewed.
   ecCodes' full-message decoder is not fuzzed here and may crash on malformed input. Establish a supported ecCodes
   version/update policy, exercise malformed-message cases, and document an agreed risk/containment policy before
   recommending use with data from untrusted sources.
-- [ ] **Verify release builds and end-to-end behavior on every advertised platform.** Require the distribution
-  pipeline and SQL tests to pass for the supported DuckDB versions and architectures, and add repeatable coverage for
-  remote `httpfs` reads, missing/stale sidecars, and failure/cancellation behavior. Publish the exact tested
-  DuckDB/ecCodes versions and platform exclusions.
 - [ ] **Finish operational release documentation.** Document the stable function/API compatibility policy, supported
   DuckDB versions, upgrade/release process, and maintainer contact/reporting path; keep the install instructions and
   limitations aligned with the published binary.

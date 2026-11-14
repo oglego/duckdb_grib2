@@ -1,3 +1,11 @@
+//! GRIB2 message index table function.
+//!
+//! This file implements the SQL table function `grib2_index(path, idx := true, details := false)`, which exposes each
+//! GRIB2 message in a file as a row. The function can use an adjacent wgrib2-style `.idx` sidecar when present, or walk
+//! the file directly using the message lengths in each indicator section. When `details` is true it also range-reads a
+//! short prefix of every message and asks ecCodes for names, levels and grid metadata. The goal is to give DuckDB a
+//! searchable catalog of message locations and attributes without decoding every value in the file.
+
 #include "grib2_index_function.hpp"
 
 #include "grib2_index_file.hpp"

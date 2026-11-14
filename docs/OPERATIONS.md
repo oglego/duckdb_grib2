@@ -14,8 +14,11 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
   (OpenJPEG) is built in but untested; CCSDS is not built in.
 - **Inventory files:** the NOAA-published wgrib2-style `.idx` format. Lines of the form `n.m` (several fields in one
   message) are not supported yet.
-- **Tested data:** NBM CONUS, Alaska, Hawaii, Puerto Rico, and Guam, forecast hour 1 of the core product. Other sources,
-  such as HRRR (also Lambert conformal), should work but have not been tried.
+- **Current verified data:** NBM CONUS, Alaska, Hawaii, Puerto Rico, and Guam, forecast hour 1 of the core product.
+  This is the tested matrix in this repository. The HRRR path
+  `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is a working example target and a future
+  expansion candidate, but it is not part of the formally supported dataset matrix until it has fixture coverage and
+  independent-oracle validation.
 
 ## Settings and limits
 

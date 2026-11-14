@@ -1,5 +1,12 @@
 #define DUCKDB_EXTENSION_MAIN
 
+//! Main entry point for the GRIB2 DuckDB extension.
+//!
+//! This file wires together the extension's settings, low-level GRIB parsing helpers, grid geometry logic, and the
+//! public SQL functions exposed to DuckDB. It registers the extension with DuckDB, initializes runtime configuration,
+//! and defines the scalar functions that inspect GRIB blobs or read values at geographic coordinates. These functions
+//! are the user-facing API for the lower-level decoding and indexing code elsewhere in the project.
+
 #include "grib2_extension.hpp"
 #include "grib2_codes.hpp"
 #include "grib2_grid.hpp"

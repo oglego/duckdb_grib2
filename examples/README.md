@@ -1,7 +1,9 @@
 # GRIB2 examples
 
 These scripts demonstrate reading HRRR surface-analysis GRIB2 files from the
-public NOAA S3 bucket with the DuckDB GRIB2 extension. 
+public NOAA S3 bucket with the DuckDB GRIB2 extension. They are active example
+and validation targets, but they are not yet part of the repository's formally
+supported meteorological data matrix.
 
 ## Current examples
 

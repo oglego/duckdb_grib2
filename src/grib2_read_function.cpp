@@ -1,3 +1,12 @@
+//! GRIB2 table-function reader for selected messages and cells.
+//!
+//! This file implements `read_grib2(path, message := ..., search := ..., points := ..., bbox := ..., all_cells :=
+//! false)`, which turns a GRIB2 file or glob into long-format SQL rows. The function selects messages by number or
+//! inventory text, chooses a spatial mode (nearest point, bounding box, or whole grid), decodes the matching grid
+//! values, and emits one row per selected cell. Cells masked by a bitmap are returned as NULL, and points outside the
+//! projected grid produce no row. The implementation keeps file I/O overlapped and deterministic while validating
+//! message lengths and index metadata before the expensive decode step.
+
 #include "grib2_read_function.hpp"
 
 #include "grib2_codes.hpp"

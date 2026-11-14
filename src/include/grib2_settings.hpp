@@ -1,13 +1,19 @@
 #pragma once
 
-// Extension settings.
-//
-//   SET grib2_io_threads = 8;   -- 1 turns off the extension's own background threads
-//
-// read_grib2 and grib2_index overlap network round trips by reading from a few background threads. That is a large win
-// on remote files, but those threads call DuckDB's file system from outside DuckDB's scheduler. A value of 1 keeps
-// every read on the query's own thread (slower on remote files, identical results), which is the setting to reach for
-// if a filesystem extension turns out not to cope, or in an environment that restricts thread creation.
+//! Extension settings and runtime tuning for GRIB2 I/O.
+//!
+//! The extension can overlap remote reads by dispatching some file work to background threads. That reduces latency for
+//! large or remote GRIB files, but those threads invoke DuckDB's file-system layer outside the scheduler that normally
+//! owns the query. This setting lets users choose between higher-throughput parallel reads and stricter single-threaded
+//! execution when a filesystem layer, environment, or platform does not handle the background-thread pattern well.
+//!
+//! Example:
+//!   SET grib2_io_threads = 8;   -- 1 turns off the extension's own background threads
+//!
+//! read_grib2 and grib2_index overlap network round trips by reading from a few background threads. That is a large win
+//! on remote files, but those threads call DuckDB's file system from outside DuckDB's scheduler. A value of 1 keeps
+//! every read on the query's own thread (slower on remote files, identical results), which is the setting to reach for
+//! if a filesystem extension turns out not to cope, or in an environment that restricts thread creation.
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"

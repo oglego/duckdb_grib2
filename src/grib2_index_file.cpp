@@ -1,3 +1,13 @@
+//! GRIB2 file indexing and metadata extraction.
+//!
+//! This file builds a safe catalog for one or more GRIB2 files by locating each message, validating its headers, and
+//! extracting enough metadata to identify the payload without decoding every value. The result is a vector of
+//! Grib2IndexRow entries describing where each message lives in the file and what it contains. If a .idx sidecar is
+//! available it is parsed and validated; otherwise the code walks the file from indicator section to indicator section.
+//! When details are requested, a short prefix of each message is read and ecCodes is used to recover names, levels and
+//! grid metadata. The logic is intentionally defensive: bounds checks, limit checks and message-length validation keep
+//! malformed or hostile inputs from causing invalid reads or resource abuse.
+
 #include "grib2_index_file.hpp"
 
 #include "grib2_codes.hpp"

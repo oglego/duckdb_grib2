@@ -1,19 +1,25 @@
 #pragma once
 
-// Parser for wgrib2-style ".idx" inventory files such as the ones NOAA publishes next to NBM and HRRR GRIB2 files.
-//
-// A line looks like
-//   133:123034124:d=2026102300:TMP:2 m above ground:1 hour fcst:
-// that is: message number, byte offset, reference time, variable, level, forecast, and an optional qualifier. The
-// qualifier is free text such as "50% level", "prob >12.7:prob fcst 255/255" or "ens std dev". It can contain colons
-// and the line does not always end with a colon, so only the first six fields are split on colons and the rest of the
-// line is the qualifier.
-//
-// The text of a line is not a unique identifier: several messages can share a variable, level, forecast and
-// qualifier. The message number (and byte offset) is the only reliable key.
-//
-// Deliberately free of DuckDB and ecCodes dependencies so it can be unit tested on its own
-// (see test/cpp/idx_check.cpp).
+//! Parser for wgrib2-style ".idx" inventory files such as the ones NOAA publishes next to NBM and HRRR GRIB2 files.
+//!
+//! This file is the file-level metadata index for GRIB2 collections. It does not decode the weather values themselves;
+//! instead, it parses the inventory that lists each message in a .grib2 file, along with its byte offset, reference
+//! time, variable, level, forecast step, and optional qualifier. The extension uses this to locate the correct message
+//! for a given variable/level/forecast without opening or scanning the entire GRIB payload. ecCodes can decode a GRIB
+//! record, but it does not provide this inventory/catalog layer for selecting the right message from a file.
+//!
+//! A line looks like
+//!   133:123034124:d=2026102300:TMP:2 m above ground:1 hour fcst:
+//! that is: message number, byte offset, reference time, variable, level, forecast, and an optional qualifier. The
+//! qualifier is free text such as "50% level", "prob >12.7:prob fcst 255/255" or "ens std dev". It can contain colons
+//! and the line does not always end with a colon, so only the first six fields are split on colons and the rest of the
+//! line is the qualifier.
+//!
+//! The text of a line is not a unique identifier: several messages can share a variable, level, forecast and
+//! qualifier. The message number (and byte offset) is the only reliable key.
+//!
+//! Deliberately free of DuckDB and ecCodes dependencies so it can be unit tested on its own
+//! (see test/cpp/idx_check.cpp).
 
 #include <cerrno>
 #include <cstdint>

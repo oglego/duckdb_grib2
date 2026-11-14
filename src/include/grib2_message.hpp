@@ -1,16 +1,22 @@
 #pragma once
 
-// Minimal parser for the sections at the start of a GRIB2 message.
-//
-// ecCodes can create a handle from a truncated message and read most keys from it, but not the data representation
-// (packing) template. Walking the section headers directly gives the packing template number, the parameter and the
-// grid template from the first few hundred bytes of a message, so a "details" index can range-read a small prefix
-// of each message instead of the whole thing.
-//
-// Only the first field of a message is described: parsing stops at the first data representation section (5).
-//
-// Deliberately free of DuckDB and ecCodes dependencies so it can be unit tested on its own
-// (see test/cpp/idx_check.cpp).
+//! Minimal parser for the sections at the start of a GRIB2 message.
+//!
+//! This file is a narrow, defensive inspection layer for GRIB2 payloads. It does not decode the actual field values;
+//! instead, it walks the early section headers in the message prefix and extracts just enough structure to determine
+//! whether the message is valid, how large it is, what grid and product templates it uses, and which packing scheme is
+//! present. That lets the extension build a cheap "details" index by range-reading only a small prefix of each message
+//! instead of loading the full payload into memory.
+//!
+//! ecCodes can create a handle from a truncated message and read most keys from it, but it does not expose the data
+//! representation (packing) template in the way this code needs for a fast structural pre-check. Walking the section
+//! headers directly gives the packing template number, parameter metadata, grid template and point counts from the
+//! first few hundred bytes of a message, which is enough for validation and indexing without a full decode.
+//!
+//! Only the first field of a message is described: parsing stops at the first data representation section (5).
+//!
+//! Deliberately free of DuckDB and ecCodes dependencies so it can be unit tested on its own
+//! (see test/cpp/idx_check.cpp).
 
 #include "grib2_grid.hpp"
 

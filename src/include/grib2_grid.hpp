@@ -1,13 +1,18 @@
 #pragma once
 
-// Geometry helpers for GRIB2 grids.
-//
-// Deliberately free of DuckDB and ecCodes dependencies so they can be unit tested on their own
-// (see test/cpp/grid_check.cpp).
-//
-// Every grid NBM publishes is regular in the plane of a map projection: Lambert conformal (CONUS), polar
-// stereographic (Alaska) and Mercator (Hawaii, Puerto Rico, Guam). ProjectedGrid implements nearest-cell and
-// box selection once; each projection supplies only its forward and inverse math.
+//! Geometry helpers for GRIB2 grids.
+//!
+//! This file provides the projected-grid geometry and lookup logic used by the extension to reason about GRIB2
+//! data in geographic space. ecCodes decodes the message and exposes the raw values and metadata, but it does not
+//! provide the extension's desired spatial abstraction: validated grid geometry, cell indexing for alternate row
+//! scanning, nearest-cell lookup, and bounding-box selection in lat/lon coordinates. This layer fills that gap.
+//!
+//! Deliberately free of DuckDB and ecCodes dependencies so they can be unit tested on their own
+//! (see test/cpp/grid_check.cpp).
+//!
+//! Every grid NBM publishes is regular in the plane of a map projection: Lambert conformal (CONUS), polar
+//! stereographic (Alaska) and Mercator (Hawaii, Puerto Rico, Guam). ProjectedGrid implements nearest-cell and
+//! box selection once; each projection supplies only its forward and inverse math.
 
 #include <algorithm>
 #include <cmath>

@@ -5,8 +5,11 @@ or inside the bounding box that you are interested in, from local files or from 
 [NOAA National Blend of Models (NBM)](https://registry.opendata.aws/noaa-nbm/) bucket. Decoding is done by
 [ecCodes](https://github.com/ecmwf/eccodes).
 
-> **Status: early.** The extension works on local files and, through `httpfs`, on public NBM data, but has not been
-> published to the DuckDB community-extensions repository and is not ready for general production use. See the
+> **Status: early.** The extension works on local files and, through `httpfs`, on public NBM data. The current verified
+> scope is the NBM fixtures and public-bucket checks documented in this repo. The HRRR S3 path shown in the examples
+> (`s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`) is a working example target, not yet part of
+> the formally supported meteorological data matrix. The extension has not been published to the DuckDB
+> community-extensions repository and is not ready for general production use. See the
 > [release-readiness checklist](docs/RELEASE_READINESS.md) for what remains before release.
 
 ## Quickstart
@@ -127,10 +130,14 @@ once and fetches the next few messages while it decodes the current one.
 
 ## What it reads
 
-The extension has been tested with NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam.
-It supports Lambert conformal, north polar stereographic and Mercator grids on a spherical earth, with the usual NBM
-scanning modes. Other grid types and scanning modes are not supported. Other sources and product types have not yet
-been verified.
+The current verified scope is NBM forecast-hour-1 core-product data for CONUS, Alaska, Hawaii, Puerto Rico and Guam.
+This is the dataset covered by the real fixture set and SQL test cases in this repository. It supports Lambert conformal,
+north polar stereographic and Mercator grids on a spherical earth, with the usual NBM scanning modes. Other grid types
+and scanning modes are not supported.
+
+The HRRR S3 path `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2` is used in the examples as
+an active future target and has been exercised manually, but it is not yet part of the documented supported-product matrix
+for release claims. Other sources and product types have not yet been verified.
 
 See [Supported inputs and operational limits](docs/OPERATIONS.md) for details about packing, inventory files, limits,
 and data that has not been tested.
