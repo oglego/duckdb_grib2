@@ -75,7 +75,9 @@ looks like `TMP:2 m above ground:1 hour fcst`; it is matched as it is and with c
 | `all_cells := true` | the whole grid (3.7 million rows per NBM CONUS message) |
 
 With none of them the function raises an error, because one CONUS message has 3.7 million cells. Longitudes may be given as
-0 to 360 or -180 to 180, and a box with `lon_max < lon_min` crosses the antimeridian.
+0 to 360 or -180 to 180, and a box with `lon_max < lon_min` crosses the antimeridian; either longitude may also be written
+with a multiple of 360 added, so `[300, 0, -150, 30]` is `[-60, 0, 210, 30]`. A box 360 degrees or more wide covers every
+longitude.
 
 **Output columns:** `file_path`, `message_number`, `reference_time`, `valid_time` (the reference time plus the step, NULL
 when the forecast is not a plain `anl` or `N hour fcst`), `variable`, `level`, `forecast`, `qualifier` (from the

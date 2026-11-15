@@ -62,6 +62,10 @@ static bool ReadSections(const FileReader &file, int64_t offset, int64_t known_l
 			error = "the file ends inside this message (truncated?)";
 			return false;
 		}
+		// The section lengths are the file's own claim; refuse before allocating or fetching that much
+		if (!HeaderSizeAcceptable(needed, error)) {
+			return false;
+		}
 		want = std::min<int64_t>(static_cast<int64_t>(needed), limit);
 	}
 	error = "could not read the message headers";
@@ -83,11 +87,12 @@ static void FillFromSections(Grib2IndexRow &row, const MessageSummary &summary, 
 }
 
 //! Names, level and grid details from ecCodes, using only the short prefix already read (sections 0 to 5).
-//! The prefix reaches ecCodes without the checks the decode path applies, so a message that claims more points than
-//! the extension will ever decode, or whose prefix is implausibly large, gets no details: its row is still listed.
+//! ReadSections has already refused headers over MAX_HEADER_BYTES. The prefix reaches ecCodes without the other checks
+//! the decode path applies, so a message that claims more points than the extension will ever decode gets no details:
+//! its row is still listed.
 static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const std::string &prefix) {
 	std::string unused_error;
-	if (!CheckMessageCounts(summary, unused_error) || static_cast<int64_t>(prefix.size()) > MAX_DETAILS_PREFIX_BYTES) {
+	if (!CheckMessageCounts(summary, unused_error) || static_cast<int64_t>(prefix.size()) > MAX_HEADER_BYTES) {
 		return;
 	}
 	CodesHandlePtr handle(codes_handle_new_from_partial_message_copy(nullptr, prefix.data(), prefix.size()));

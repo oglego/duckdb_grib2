@@ -144,14 +144,19 @@ public:
 	}
 
 	//! Appends the flat index (j * ni + i) of every cell whose centre lies inside the lat/lon box, in ascending order.
-	//! Longitudes may use either convention. A box with lon_max < lon_min crosses the antimeridian.
+	//! Longitudes may use either convention, and each may be written with any multiple of 360 added. The box runs east
+	//! from lon_min to lon_max, so lon_max < lon_min (modulo 360) crosses the antimeridian, and a box 360 degrees or
+	//! more wide covers every longitude.
 	void CellsInBox(double lon_min, double lat_min, double lon_max, double lat_max, std::vector<int64_t> &out) const {
 		// Width of the box in degrees east, computed before wrapping so both longitude conventions work
 		double span = lon_max - lon_min;
-		if (span < 0) {
-			span += 360.0;
+		if (span >= 360.0) {
+			span = 360.0;
+		} else {
+			// Eastward distance modulo 360. Endpoints a full turn apart can leave a span below -360 (for example
+			// [300, -150]), so adding 360 once is not enough.
+			span -= 360.0 * std::floor(span / 360.0);
 		}
-		span = std::min(span, 360.0);
 		lon_min = WrapLongitude180(lon_min);
 
 		// Project the box outline. The image of a simply connected region is bounded by the image of its boundary, so

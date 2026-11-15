@@ -24,7 +24,8 @@ complete and its evidence is reviewed.
   concurrency limits with hostile or malformed inputs. Done so far: the caps are lowered to values no known public
   product approaches (64 million cells, 256 MiB a message, about 1 GiB to decode the largest allowed message), a message
   that claims more points than that is refused before ecCodes sees it, and `grib2_index(..., details := true)` applies
-  the same limit and a 1 MiB prefix cap (`test/data/huge_count.grib2`). Decode memory is still not counted against
+  the same limit (`test/data/huge_count.grib2`), and headers over 1 MiB are refused before they are read, with no
+  allocation or fetch of that size (`test/data/huge_header.grib2`). Decode memory is still not counted against
   `memory_limit`, and cancellation under a slow remote read and many concurrent queries have not been tested.
 - [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, and
   only packing templates 5.0, 5.2 and 5.3 are allowed through to ecCodes (all others are refused up front). ecCodes'

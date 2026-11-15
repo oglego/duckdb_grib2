@@ -41,7 +41,8 @@ message loading, and row production:
    this screen; a message with any other template is refused before ecCodes is called (`IsScreenedPackingTemplate` in
    `src/include/grib2_message.hpp`). This covers decoding. The `details := true` path of `grib2_index` passes
    only a short prefix (sections 0 to 5) to ecCodes, and only for a message whose claimed point counts are within the
-   same limit and whose prefix is at most 1 MiB; otherwise that row is listed without details.
+   same limit; otherwise that row is listed without details. The prefix is never larger than 1 MiB, because the reader
+   refuses headers over that size before it reads them (`HeaderSizeAcceptable`).
 4. **Build the supported grid.** `MakeGrid` reads the grid keys listed below, validates them, and constructs the
    extension's spherical Lambert conformal, Mercator, or north polar-stereographic projection. Other grid types,
    scanning arrangements, Earth shapes, and south-polar stereographic grids are rejected as unsupported.
@@ -92,7 +93,8 @@ used for names and grid details by `grib2_index(..., details := true)`, but that
 - `grib2_index(..., details := true)` uses `codes_handle_new_from_partial_message_copy` on a short message prefix to
   read `shortName`, `typeOfLevel`, `level`, `gridType`, `Ni`, `Nj`, and `alternativeRowScanning`. The extension's
   section parser supplies the packing template because a partial handle is not used for that field. The prefix is
-  limited as described in step 3, so a hostile count or an implausibly large header never reaches ecCodes here.
+  limited as described in step 3, so a hostile count or an implausibly large header never reaches ecCodes here, and
+  never gets read into memory.
 
 ## Related implementation and tests
 

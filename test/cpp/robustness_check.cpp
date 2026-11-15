@@ -324,6 +324,79 @@ int main() {
 		CHECK(!CheckMessageCounts(counts, err));
 	}
 
+	{ // The reader refuses to fetch headers over the limit, judging from the first bytes alone
+		const std::string huge = ReadFile("test/data/huge_header.grib2");
+		CHECK(huge.size() > static_cast<size_t>(MAX_HEADER_BYTES));
+		MessageSummary summary;
+		size_t needed = 0;
+		std::string err;
+		const SectionParseResult result =
+		    ParseMessageSections(reinterpret_cast<const uint8_t *>(huge.data()), 512, summary, needed, err);
+		CHECK(result == SectionParseResult::NEED_MORE);
+		CHECK(needed > static_cast<size_t>(MAX_HEADER_BYTES));
+		CHECK(!HeaderSizeAcceptable(needed, err));
+		CHECK(err.find("limit is") != std::string::npos);
+		// Real headers are far below the limit, and the limit itself is accepted
+		CHECK(HeaderSizeAcceptable(static_cast<size_t>(MAX_HEADER_BYTES), err));
+		CHECK(!HeaderSizeAcceptable(static_cast<size_t>(MAX_HEADER_BYTES) + 1, err));
+		for (const char *path : {"fixtures/nbm_msg.grib2", "fixtures/nbm_ak_msg.grib2", "fixtures/nbm_gu_msg.grib2",
+		                         "fixtures/hrrr_msg70_snod_spatial.grib2", "test/data/simple_9999.grib2"}) {
+			const std::string real = ReadFile(path);
+			MessageSummary real_summary;
+			size_t real_needed = 0;
+			const SectionParseResult real_result = ParseMessageSections(reinterpret_cast<const uint8_t *>(real.data()),
+			                                                            real.size(), real_summary, real_needed, err);
+			CHECK(real_result == SectionParseResult::OK);
+			CHECK(real_needed < 4096);
+			CHECK(HeaderSizeAcceptable(real_needed, err));
+		}
+	}
+
+	{ // A bbox longitude written with any multiple of 360 added selects the same cells
+		MercatorGrid guam(193, 193, 12.349883999999999, 143.68653800000001, 20, 2500, 2500, 6371200);
+		struct Box {
+			double lon_min, span, lat_min, lat_max;
+		};
+		// lon_min in [-180, 180) and an eastward span in (0, 360), so the canonical box is [lon_min, lon_min + span]
+		const Box boxes[] = {
+		    {-60, 270, 0, 30}, {143, 3, 12, 15}, {170, 20, 0, 30}, {140, 50, 0, 30}, {-170, 40, 5, 25}};
+		for (const Box &box : boxes) {
+			std::vector<int64_t> expected;
+			guam.CellsInBox(box.lon_min, box.lat_min, box.lon_min + box.span, box.lat_max, expected);
+			for (const int shift_min : {-1, 0, 1}) {
+				for (const int shift_max : {-1, 0, 1}) {
+					const double lon_min = box.lon_min + 360.0 * shift_min;
+					const double lon_max = box.lon_min + box.span + 360.0 * shift_max;
+					const bool accepted_range = std::fabs(lon_min) <= 360.0 && std::fabs(lon_max) <= 360.0;
+					if (!accepted_range || lon_max - lon_min >= 360.0) {
+						continue; // outside what read_grib2 accepts, or a full turn or more (covers every longitude)
+					}
+					std::vector<int64_t> cells;
+					guam.CellsInBox(lon_min, box.lat_min, lon_max, box.lat_max, cells);
+					CHECK(cells == expected);
+				}
+			}
+		}
+		// The case that selected nothing: [300, -150] is [-60, 210], which covers the whole Guam grid
+		std::vector<int64_t> wrapped, canonical;
+		guam.CellsInBox(300, 0, -150, 30, wrapped);
+		guam.CellsInBox(-60, 0, 210, 30, canonical);
+		CHECK(wrapped.size() == 193 * 193);
+		CHECK(wrapped == canonical);
+		// A box 360 degrees or more wide still covers every longitude
+		for (const double lon_min : {-180.0, 0.0, -360.0}) {
+			std::vector<int64_t> world;
+			guam.CellsInBox(lon_min, -90, lon_min + (lon_min == -360.0 ? 720.0 : 360.0), 90, world);
+			CHECK(world.size() == 193 * 193);
+		}
+		// A narrow box across the antimeridian that misses Guam, and a zero-width box, still select nothing
+		std::vector<int64_t> across, meridian;
+		guam.CellsInBox(170, 0, -170, 30, across);
+		CHECK(across.empty());
+		guam.CellsInBox(0, 0, 0, 30, meridian);
+		CHECK(meridian.empty());
+	}
+
 	std::printf("robustness: %zu parser inputs, failures=%d\n", inputs, failures);
 	return failures == 0 ? 0 : 1;
 }

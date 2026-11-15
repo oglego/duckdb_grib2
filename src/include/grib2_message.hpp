@@ -149,6 +149,21 @@ inline bool MessageLengthWithinFile(uint64_t total_length, int64_t offset, int64
 	return true;
 }
 
+//! Largest run of headers (sections 0 to 5: indicator, identification, local use, grid, product, data representation)
+//! read for one message. Real headers are well under a kilobyte for the grids this extension supports and a few
+//! kilobytes for the largest reduced Gaussian grids. The section lengths come from the file, so a corrupt or hostile
+//! message can ask for far more; the reader asks HeaderSizeAcceptable before it allocates or reads anything.
+constexpr int64_t MAX_HEADER_BYTES = 1024LL * 1024;
+
+inline bool HeaderSizeAcceptable(size_t needed, std::string &error) {
+	if (needed <= static_cast<size_t>(MAX_HEADER_BYTES)) {
+		return true;
+	}
+	error = "the message headers (sections 0 to 5) are " + std::to_string(needed) + " bytes; the limit is " +
+	        std::to_string(MAX_HEADER_BYTES);
+	return false;
+}
+
 //! Packing (data representation) templates that may reach ecCodes' decoder: 5.0 simple, 5.2 complex and 5.3 complex
 //! with spatial differencing. Each has a layout check in CheckDataRepresentation (declared counts and widths against
 //! the size of the data section) and has been decoded successfully on real data (NBM uses 5.2 and 5.3, HRRR uses 5.0

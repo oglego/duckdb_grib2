@@ -618,6 +618,45 @@ SELECT short_name IS NULL, grid_type, ni FROM grib2_index('fixtures/hrrr_msg90_c
 ----
 false	lambert	1799
 
+# A bbox longitude may be written with a multiple of 360 added: [300, -150] is [-60, 210], and both cover the whole Guam grid
+query II
+SELECT count(*), count(DISTINCT (i, j)) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -150, 30]);
+----
+37249	37249
+
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [-60, 0, 210, 30]);
+----
+37249
+
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -100, 30]);
+----
+37249
+
+# A box 360 degrees or more wide still covers every longitude
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [-180, -90, 180, 90]);
+----
+37249
+
+# A message whose headers (sections 0 to 5) are larger than the reader will fetch, here a 1.1 MB local-use section
+# (test/data/generate_huge_header_sample.py), is refused before anything that large is read
+statement error
+SELECT * FROM grib2_index('test/data/huge_header.grib2');
+----
+the limit is 1048576
+
+statement error
+SELECT * FROM grib2_index('test/data/huge_header.grib2', details := true);
+----
+the limit is 1048576
+
+statement error
+SELECT * FROM read_grib2('test/data/huge_header.grib2', all_cells := true);
+----
+the limit is 1048576
+
 # Errors
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');
