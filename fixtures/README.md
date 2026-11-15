@@ -108,6 +108,7 @@ curl -r OFFSET-$((OFFSET + LENGTH - 1)) -o hrrr_msg90_csnow_simple_const.grib2 \
 `scripts/fetch_hrrr_fixtures.sh` does this and checks each download. NOAA keeps only a limited window of recent HRRR runs, so
 the committed files are the reference.
 
-Not covered: a 5.0 message with varying values. Real ones are large (a 1.9 million cell field needs at least about 240 KB at
-one bit per value), so none is in the repository yet.
+Not covered: a real NOAA 5.0 message with varying values. Real ones are large (a 1.9 million cell field needs at least about
+240 KB at one bit per value), so none is in the repository. `test/data/simple_*.grib2` stand in: windows of the real snow-depth
+grid re-encoded with simple packing (see `test/README.md`).
 

@@ -139,8 +139,10 @@ differencing); messages with another template are refused with an error, though 
 
 For HRRR (`s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`), three real messages are tested
 (packing 5.0 and 5.3), the Lambert math agrees with ecCodes for the HRRR grid to about 1e-13 degrees, and a full file
-has been read from S3 by hand. Only one HRRR message packed as 5.0 is in the test set, and it is a constant field, so 5.0
-with varying values is covered by the NBM-independent layout checks but not yet by a real file. Other HRRR products
+has been read from S3 by hand. The one real HRRR message packed as 5.0 in the test set is a constant field. Simple packing
+with varying values, with a bitmap, and with real values equal to 9999 is tested on small windows of the real HRRR grid
+re-encoded as 5.0 (synthetic re-encodings of real values, not messages NOAA produced); a real NOAA 5.0 message with varying
+values is not in the test set. Other HRRR products
 (`wrfprs`, `wrfnat`, sub-hourly, other domains) and other sources have not been verified.
 
 See [Supported inputs and operational limits](docs/OPERATIONS.md) for details about packing, inventory files, limits,

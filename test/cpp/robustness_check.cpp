@@ -72,6 +72,9 @@ int main() {
 	    "fixtures/hrrr_msg90_csnow_simple_const.grib2",
 	    "fixtures/hrrr_msg166_icec_spatial.grib2",
 	    "fixtures/hrrr_msg70_snod_spatial.grib2",
+	    "test/data/simple_window.grib2",
+	    "test/data/simple_bitmap.grib2",
+	    "test/data/simple_9999.grib2",
 	};
 	size_t inputs = 0;
 	for (const auto &path : messages) {

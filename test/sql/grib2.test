@@ -528,6 +528,78 @@ SELECT round(value, 3) FROM read_grib2('fixtures/hrrr_*.grib2', points := [{'lat
 0.000
 46.072
 
+# Template 5.0 (simple packing) with varying values. These are a 120 x 100 window of the real HRRR snow-depth grid around
+# Mount Rainier, re-encoded with simple packing (test/data/generate_simple_packed_samples.py), so they are synthetic
+# re-encodings of real values, not messages NOAA produced. Expected values come from ecCodes at exact cell centres.
+
+# No bitmap: all 12000 cells have values, 248 of them snow
+query T
+SELECT regexp_extract(grib2_message_info(content), 'gridType=.*$') FROM read_blob('test/data/simple_window.grib2');
+----
+gridType=lambert;Ni=120;Nj=100;numberOfPoints=12000;packingType=grid_simple;alternativeRowScanning=0;values=12000;min=0.000;max=46.072
+
+query IIRRI
+SELECT count(*), count(value), min(value), max(value), count(*) FILTER (WHERE value > 0) FROM read_grib2('test/data/simple_window.grib2', all_cells := true);
+----
+12000	12000	0.000	46.072	248
+
+query R
+SELECT round(sum(value), 3) FROM read_grib2('test/data/simple_window.grib2', all_cells := true);
+----
+1050.040
+
+# The window is cut from the full grid, and its Mount Rainier maximum is the same place as in the full-grid message above
+query IIRRRI
+SELECT i, j, round(lat, 3), round(lon, 3), round(value, 3), distance_km < 0.01 FROM read_grib2('test/data/simple_window.grib2', points := [{'lat': 46.822023, 'lon': -121.728165}]);
+----
+45	40	46.822	-121.728	46.072	true
+
+# A bitmap masks a 20 x 15 block (300 cells). Simple packing has no other way to mark missing cells.
+query I
+SELECT regexp_extract(grib2_message_info(content), 'min=[^;]*;max=.*$') FROM read_blob('test/data/simple_bitmap.grib2');
+----
+min=0.000;max=46.072
+
+query IIIRR
+SELECT count(*), count(value), count(*) FILTER (WHERE value > 0), round(sum(value), 3), round(max(value), 3) FROM read_grib2('test/data/simple_bitmap.grib2', all_cells := true);
+----
+12000	11700	248	1050.040	46.072
+
+query IIR
+SELECT i, j, round(value, 3) FROM read_grib2('test/data/simple_bitmap.grib2', points := [{'lat': 46.914781, 'lon': -120.754995}, {'lat': 46.822023, 'lon': -121.728165}]);
+----
+70	37	NULL
+45	40	46.072
+
+query I
+SELECT grib2_point_value(content, 46.914781, -120.754995) IS NULL FROM read_blob('test/data/simple_bitmap.grib2');
+----
+true
+
+# A bitmap masks 300 cells, and 1064 of the others are real values of exactly 9999. Treating 9999 as the missing marker
+# would give 1364 NULLs.
+query I
+SELECT regexp_extract(grib2_message_info(content), 'min=[^;]*;max=.*$') FROM read_blob('test/data/simple_9999.grib2');
+----
+min=0.000;max=9999.000
+
+query IIIIRR
+SELECT count(*), count(value), count(*) FILTER (WHERE value = 9999), count(*) FILTER (WHERE value IS NULL), min(value), max(value) FROM read_grib2('test/data/simple_9999.grib2', all_cells := true);
+----
+12000	11700	1064	300	0.000	9999.000
+
+query R
+SELECT round(sum(value), 3) FROM read_grib2('test/data/simple_9999.grib2', all_cells := true);
+----
+58449633.000
+
+query IIR
+SELECT i, j, round(value, 3) FROM read_grib2('test/data/simple_9999.grib2', points := [{'lat': 47.153673, 'lon': -122.469338}, {'lat': 45.470671, 'lon': -122.989621}, {'lat': 45.477986, 'lon': -122.952895}]);
+----
+30	57	NULL
+0	0	9999.000
+1	0	131.000
+
 # Errors
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');

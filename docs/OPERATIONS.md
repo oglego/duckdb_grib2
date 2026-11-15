@@ -21,7 +21,9 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
   the HRRR CONUS surface file `s3://noaa-hrrr-bdp-pds/hrrr.{YYYYMMDD}/conus/hrrr.t{HH}z.wrfsfcf00.grib2`. This is the
   tested matrix in this repository. For HRRR it consists of three real messages (5.0 constant field, 5.3 with 2 and 17 bits
   per value) checked against ecCodes, and the HRRR grid (Lambert, earth shape 6, rows not alternating) in the projection
-  oracle. Not yet covered: a real 5.0 message with varying values, other HRRR products and domains, and other sources.
+  oracle. Simple packing with varying values, a bitmap, and real 9999 values is tested on windows of the real grid
+  re-encoded as 5.0 (`test/data/simple_*.grib2`; synthetic re-encodings, not NOAA output). Not yet covered: a real NOAA 5.0
+  message with varying values, other HRRR products and domains, and other sources.
 
 ## Settings and limits
 

@@ -102,7 +102,10 @@ int main() {
 	                       "test/data/stale.grib2",
 	                       "fixtures/hrrr_msg90_csnow_simple_const.grib2",
 	                       "fixtures/hrrr_msg166_icec_spatial.grib2",
-	                       "fixtures/hrrr_msg70_snod_spatial.grib2"};
+	                       "fixtures/hrrr_msg70_snod_spatial.grib2",
+	                       "test/data/simple_window.grib2",
+	                       "test/data/simple_bitmap.grib2",
+	                       "test/data/simple_9999.grib2"};
 	int messages = 0;
 	std::vector<uint8_t> complex_spatial; // template 5.3, used for the corruption cases
 	std::vector<uint8_t> complex_plain;   // template 5.2
@@ -130,7 +133,7 @@ int main() {
 			}
 		}
 	}
-	Check(messages >= 17, "expected at least 17 messages in the test files, saw " + std::to_string(messages));
+	Check(messages >= 20, "expected at least 20 messages in the test files, saw " + std::to_string(messages));
 	Check(!complex_spatial.empty() && !complex_plain.empty(), "need a 5.2 and a 5.3 message among the test files");
 
 	const struct {

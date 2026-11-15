@@ -7,8 +7,10 @@ complete and its evidence is reviewed.
 - [ ] **Define and verify the supported meteorological data matrix.** Document supported sources, GRIB2 grid templates,
   Earth shapes, scanning modes, packing templates, and forecast/product types. The repository has real fixture and SQL coverage for NBM
   forecast-hour-1 core products and for the HRRR CONUS surface file (three real messages, and the HRRR Lambert grid in the
-  projection oracle). Remaining: a real HRRR message packed as 5.0 with varying values (the 5.0 fixture is a constant
-  field), and any other HRRR product or domain, which stays out of the supported matrix until tested. Keep unsupported
+  projection oracle). Template 5.0 with varying values, a bitmap and real 9999s is covered by re-encoded
+  windows of the real grid (synthetic, `test/data/simple_*.grib2`). Remaining: a real NOAA-produced 5.0 message with varying
+  values (the real 5.0 fixture is a constant field), and any other HRRR product or domain, which stays out of the supported
+  matrix until tested. Keep unsupported
   combinations out of production claims.
 - [x] **Validate bounding boxes and bound search matching.** Bounding boxes now reject non-finite coordinates and
   longitudes outside -360 to 360 before grid selection. `search` now uses DuckDB's RE2 engine, avoiding

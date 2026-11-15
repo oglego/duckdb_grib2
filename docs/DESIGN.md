@@ -275,8 +275,10 @@ Read from the community-extensions repository (`duckdb/community-extensions`) ra
 1. `.idx` format: same `n:offset:d=YYYYMMDDHH:VAR:level:fcst:` layout as NBM; the inventory and `details := true` both work.
 2. Packing: the file mixes template 5.3 (complex with spatial differencing) and 5.0 (simple). Message 77 is one of the 5.0
    messages (it first failed when the extension refused 5.0). Many 5.0 messages are tiny constant fields (0 bits per value,
-   188 bytes); a 5.0 message with varying values needs at least about 240 KB at 1 bit per value, and none is in the test set
-   yet.
+   188 bytes); a 5.0 message with varying values needs at least about 240 KB at 1 bit per value, and none is in the test set.
+   Instead `test/data/simple_*.grib2` re-encode a 120 x 100 window of the real snow-depth grid as 5.0 (no bitmap; a bitmap;
+   a bitmap with integers of which many are exactly 9999). That checks the decoding, the masking and the layout check on
+   simple packing, but not how NOAA's encoder lays out a 5.0 message.
 3. Earth shape and scanning: shape 6 (a sphere of radius 6371229 m), `jScansPositively` 1, `alternativeRowScanning` 0, in
    contrast to NBM's shape 1 and alternating rows. The projection oracle (`test/data/grid_reference.txt`) now includes an
    `hrrr` section; the closed-form Lambert math agrees with ecCodes to about 1e-13 degrees there.

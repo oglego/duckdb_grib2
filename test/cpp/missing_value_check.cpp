@@ -6,10 +6,11 @@
 //   ./missing_value_check          (from the repository root)
 //
 // It runs the same calls as DecodeGribValues (the screen, a copied handle, Grib2UseNanForMissing, the "values" array)
-// and compares the cells it reports as missing with the block that test/data/generate_missing_value_samples.py and
-// generate_masked_sample.py leave without data. It also replays the legacy rule (ecCodes' default 9999 marker, honoured
-// only when the message has a bitmap) to prove that these fixtures distinguish the two: if the legacy rule ever agrees
-// with the truth on them, they have stopped testing what they are for.
+// and compares the cells it reports as missing with the block that the generators in test/data/ leave without data
+// (generate_masked_sample.py, generate_missing_value_samples.py, generate_simple_packed_samples.py). It also replays
+// the legacy rule (ecCodes' default 9999 marker, honoured only when the message has a bitmap) to prove that these
+// fixtures distinguish the two: if the legacy rule ever agrees with the truth on them, they have stopped testing what
+// they are for.
 
 #include "grib2_message.hpp"
 #include "grib2_missing.hpp"
@@ -75,34 +76,48 @@ static Decoded Decode(const std::vector<uint8_t> &msg, bool nan_marker) {
 	return d;
 }
 
-//! Stored-order indexes of the block i in 60..79, j in 100..119 (i east, j north) that the generators leave empty
-static std::set<size_t> Block(const Decoded &d) {
-	std::set<size_t> block;
-	for (long j = 100; j < 120; j++) {
-		for (long i = 60; i < 80; i++) {
-			block.insert(static_cast<size_t>(j * d.ni + ((d.alt && j % 2) ? (d.ni - 1 - i) : i)));
+//! A block of cells left without data: i in [i0, i1), j in [j0, j1), i east and j north from the first point.
+//! Empty when i1 <= i0.
+struct Block {
+	long i0, i1, j0, j1;
+};
+
+static const Block NO_BLOCK = {0, 0, 0, 0};
+
+//! Stored-order indexes of the cells of a block
+static std::set<size_t> BlockCells(const Decoded &d, const Block &block) {
+	std::set<size_t> cells;
+	for (long j = block.j0; j < block.j1; j++) {
+		for (long i = block.i0; i < block.i1; i++) {
+			cells.insert(static_cast<size_t>(j * d.ni + ((d.alt && j % 2) ? (d.ni - 1 - i) : i)));
 		}
 	}
-	return block;
+	return cells;
 }
 
 struct Case {
 	const char *path;
-	bool has_block;       // 400 cells without data
-	bool real_9999_cells; // every other cell is exactly 9999.0
+	Block block;             // the cells that have no data
+	long real_9999;          // how many other cells are exactly 9999.0; -1 when the file has none to count
+	bool legacy_must_differ; // the fixture exists to tell the legacy rule from the new one
 };
 
 int main() {
+	// The Guam fixtures leave i 60..79, j 100..119 empty; the 5.0 windows have their own blocks (see the generators)
+	const Block guam = {60, 80, 100, 120};
 	const Case cases[] = {
-	    {"test/data/missing_complex.grib2", true, false}, // 5.2, flagged by the packing, no bitmap
-	    {"test/data/missing_spatial.grib2", true, false}, // 5.3, flagged by the packing, no bitmap
-	    {"test/data/real_9999.grib2", true, true},        // bitmap; real values equal to 9999
-	    {"test/data/masked_gu.grib2", true, false},       // bitmap; the original masked fixture
-	    {"fixtures/nbm_gu_msg.grib2", false, false},      // nothing missing at all
-	    {"fixtures/nbm_msg.grib2", false, false},
-	    {"fixtures/hrrr_msg90_csnow_simple_const.grib2", false, false}, // real HRRR 5.0 (constant field)
-	    {"fixtures/hrrr_msg166_icec_spatial.grib2", false, false},      // real HRRR 5.3, 2 bits per value
-	    {"fixtures/hrrr_msg70_snod_spatial.grib2", false, false},       // real HRRR 5.3, 17 bits per value
+	    {"test/data/missing_complex.grib2", guam, -1, true},    // 5.2, flagged by the packing, no bitmap
+	    {"test/data/missing_spatial.grib2", guam, -1, true},    // 5.3, flagged by the packing, no bitmap
+	    {"test/data/real_9999.grib2", guam, 37249 - 400, true}, // bitmap; every other cell is a real 9999
+	    {"test/data/masked_gu.grib2", guam, -1, false},         // bitmap; the original masked fixture
+	    {"fixtures/nbm_gu_msg.grib2", NO_BLOCK, -1, false},     // nothing missing at all
+	    {"fixtures/nbm_msg.grib2", NO_BLOCK, -1, false},
+	    {"fixtures/hrrr_msg90_csnow_simple_const.grib2", NO_BLOCK, -1, false}, // real HRRR 5.0 (constant field)
+	    {"fixtures/hrrr_msg166_icec_spatial.grib2", NO_BLOCK, -1, false},      // real HRRR 5.3, 2 bits per value
+	    {"fixtures/hrrr_msg70_snod_spatial.grib2", NO_BLOCK, -1, false},       // real HRRR 5.3, 17 bits per value
+	    {"test/data/simple_window.grib2", NO_BLOCK, -1, false},                // 5.0, no bitmap, real values
+	    {"test/data/simple_bitmap.grib2", {60, 80, 30, 45}, -1, false},        // 5.0, bitmap masks a block
+	    {"test/data/simple_9999.grib2", {20, 40, 50, 65}, 1064, true},         // 5.0, bitmap; 1064 real 9999s
 	};
 	for (const Case &c : cases) {
 		std::cout << c.path << "\n";
@@ -122,12 +137,13 @@ int main() {
 				equal_9999++;
 			}
 		}
-		const std::set<size_t> expected = c.has_block ? Block(d) : std::set<size_t>();
+		const std::set<size_t> expected = BlockCells(d, c.block);
 		Check(missing == expected, std::string(c.path) + ": cells reported missing: " + std::to_string(missing.size()) +
 		                               ", expected " + std::to_string(expected.size()));
-		if (c.real_9999_cells) {
-			Check(equal_9999 == d.values.size() - expected.size(),
-			      std::string(c.path) + ": real 9999 values were lost: " + std::to_string(equal_9999));
+		if (c.real_9999 >= 0) {
+			Check(equal_9999 == static_cast<size_t>(c.real_9999),
+			      std::string(c.path) + ": real 9999 values: " + std::to_string(equal_9999) + ", expected " +
+			          std::to_string(c.real_9999));
 		}
 
 		// The legacy rule: default marker, honoured only when the message has a bitmap
@@ -140,9 +156,7 @@ int main() {
 			}
 		}
 		const bool legacy_agrees = legacy_missing == expected.size();
-		const bool fixture_must_discriminate = std::string(c.path).find("missing_") != std::string::npos ||
-		                                       std::string(c.path).find("real_9999") != std::string::npos;
-		if (fixture_must_discriminate) {
+		if (c.legacy_must_differ) {
 			Check(!legacy_agrees, std::string(c.path) + ": the legacy rule gets this right (" +
 			                          std::to_string(legacy_missing) + " cells), so the fixture no longer tests it");
 		} else {
