@@ -226,8 +226,9 @@ and decodes each selected message in turn.
 - **Where remote time goes** (request log of a six-file `s3://` time series, 4.3 s wall): one glob listing 0.26 s; per file
   a `HEAD` on the data (about 52 ms), a `HEAD` on the `.idx` (about 55 ms) and a `GET` of the `.idx` (74 to 107 ms), 1.1 s
   for all six; and the six 2 MB message reads at 0.36 to 0.49 s each, 2.4 s together (about 5 MB/s on one connection). All
-  of it was sequential. `IndexFiles` now indexes up to eight files at once, and `read_grib2` keeps six message fetches in
-  flight while decoding the current one. Decoding stays on the scanning thread, so the row order is deterministic and ecCodes
+  of it was sequential. With `grib2_io_threads` above 1 (opt in; the default is 1, which keeps every read on the query thread), `IndexFiles`
+  indexes that many files at once and `read_grib2` keeps up to six message fetches in flight while decoding the current
+  one. The timings above were taken with the overlap on. Decoding stays on the scanning thread, so the row order is deterministic and ecCodes
   is not called concurrently. Each background fetch opens its own file handle rather than sharing one across threads.
   `details := true` indexes files one at a time because it calls into ecCodes.
 - **Requests per file in `read_grib2`:** open the data file, open the sidecar directly (a 404 returns nothing, instead of a

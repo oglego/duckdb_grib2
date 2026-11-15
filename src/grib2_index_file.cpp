@@ -119,7 +119,7 @@ static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const
 }
 
 void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows,
-               bool verify_first_message) {
+               bool verify_first_message, ClientContext *context) {
 	const FileReader file(fs, path);
 	const std::string idx_path = path + ".idx";
 
@@ -137,6 +137,9 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 			throw InvalidInputException(idx_path + ": " + error);
 		}
 		for (size_t i = 0; i < entries.size(); i++) {
+			if (context) {
+				context->InterruptCheck();
+			}
 			const IdxEntry &entry = entries[i];
 			Grib2IndexRow row;
 			row.file_path = path;
@@ -183,6 +186,9 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 	int64_t offset = 0;
 	int64_t number = 1;
 	while (offset < file.size) {
+		if (context) {
+			context->InterruptCheck();
+		}
 		MessageSummary summary;
 		std::string prefix;
 		std::string error;
@@ -209,7 +215,8 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 }
 
 std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::vector<std::string> &paths, bool use_idx,
-                                                   bool details, bool verify_first_message, idx_t max_parallel) {
+                                                   bool details, bool verify_first_message, idx_t max_parallel,
+                                                   ClientContext *context) {
 	std::vector<std::vector<Grib2IndexRow>> results(paths.size());
 	std::vector<std::exception_ptr> errors(paths.size());
 	std::atomic<size_t> next(0);
@@ -220,7 +227,7 @@ std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::ve
 				return;
 			}
 			try {
-				IndexFile(fs, paths[i], use_idx, details, results[i], verify_first_message);
+				IndexFile(fs, paths[i], use_idx, details, results[i], verify_first_message, context);
 			} catch (...) {
 				errors[i] = std::current_exception();
 			}

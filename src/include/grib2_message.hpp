@@ -169,7 +169,7 @@ inline bool HeaderSizeAcceptable(size_t needed, std::string &error) {
 //! the size of the data section) and has been decoded successfully on real data (NBM uses 5.2 and 5.3, HRRR uses 5.0
 //! and 5.3). ecCodes trusts its input, so a message with any other template is refused here rather than "left to
 //! ecCodes". Widening this list needs a layout check, corrupt-input tests and a real-data fixture first (see
-//! docs/RELEASE_READINESS.md).
+//! docs/OPERATIONS.md, "Input caveats").
 static const int SCREENED_PACKING_TEMPLATES[] = {0, 2, 3};
 
 inline bool IsScreenedPackingTemplate(int data_template) {
@@ -233,7 +233,7 @@ inline uint64_t ReadBitsBigEndian(const uint8_t *data, uint64_t position, unsign
 //! Reject malformed GRIB2 messages before ecCodes sees them. ecCodes trusts the input: bad lengths, absurd group
 //! counts, or bit widths above 64 can abort or segfault the decoder. We do a basic whole-message check: sections must
 //! be contiguous up to the final "7777" marker, and the field must satisfy a few sanity checks that no valid message
-//! can violate. Other packing templates are left to ecCodes.
+//! can violate. Only the templates in SCREENED_PACKING_TEMPLATES reach this check; ScreenMessage refuses the rest.
 inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const MessageSummary &summary,
                                     std::string &error) {
 	if (summary.total_length > size) {

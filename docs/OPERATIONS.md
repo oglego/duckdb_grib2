@@ -1,6 +1,6 @@
 # Supported inputs and operational limits
 
-This note expands on the support summary in the [README](../README.md#what-it-reads). Support is intentionally limited to
+This note expands on the support summary in the [README](../README.md#supported-data). Support is intentionally limited to
 the combinations tested here; other GRIB2 data may work but has not been qualified.
 
 ## Supported inputs
@@ -28,13 +28,19 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
 ## Settings and limits
 
 ```sql
-SET grib2_io_threads = 8;   -- default 8, range 1 to 64
+SET grib2_io_threads = 8;   -- default 1, range 1 to 64
 ```
 
-`grib2_index` and `read_grib2` overlap network round trips using background threads. They call DuckDB's file system from
-those threads rather than from DuckDB's own. If a filesystem extension misbehaves under that, or the environment
-restricts thread creation, set `grib2_io_threads = 1` to keep reads on the query thread. This is slower for remote files
-but returns the same results.
+By default every file read happens on the query's own thread. Setting `grib2_io_threads` above 1 opts in to overlapping
+network round trips: `grib2_index` indexes several files at once and `read_grib2` keeps up to that many message fetches
+(at most 6) in flight while it decodes the current message. This is much faster for remote files, and the results are
+identical.
+
+The overlap is opt-in because those background threads call DuckDB's file system from outside DuckDB's own scheduler.
+That has been tested with plain `https://` and public `s3://` reads, but not with every filesystem extension or with
+credentials supplied through DuckDB secrets, so try it on your setup before relying on it. A query that ends early (for
+example with `LIMIT`) waits for fetches already started on background threads. Queries are checked for cancellation
+between messages in both functions.
 
 Hard resource and input limits are reported as errors naming the file and message where applicable. A forecast step
 outside the supported range is left unset, so `valid_time` is NULL:

@@ -2,18 +2,20 @@
 
 //! Extension settings and runtime tuning for GRIB2 I/O.
 //!
-//! The extension can overlap remote reads by dispatching some file work to background threads. That reduces latency for
-//! large or remote GRIB files, but those threads invoke DuckDB's file-system layer outside the scheduler that normally
-//! owns the query. This setting lets users choose between higher-throughput parallel reads and stricter single-threaded
-//! execution when a filesystem layer, environment, or platform does not handle the background-thread pattern well.
+//! By default every file read happens on the query's own thread. That is the safest behaviour: DuckDB's file-system
+//! layer (and filesystem extensions such as httpfs, with their secrets and credential lookups) is then only ever called
+//! from the thread that owns the query.
+//!
+//! For remote files, round trips dominate the run time, and the extension can overlap them: with grib2_io_threads above
+//! 1, grib2_index indexes several files at once and read_grib2 keeps several message fetches in flight while it decodes
+//! the current message. Those background threads call DuckDB's file system from outside DuckDB's scheduler, so the
+//! overlap is opt-in. Results are identical either way.
 //!
 //! Example:
-//!   SET grib2_io_threads = 8;   -- 1 turns off the extension's own background threads
+//!   SET grib2_io_threads = 8;   -- opt in to overlapped reads (1, the default, keeps all reads on the query thread)
 //!
-//! read_grib2 and grib2_index overlap network round trips by reading from a few background threads. That is a large win
-//! on remote files, but those threads call DuckDB's file system from outside DuckDB's scheduler. A value of 1 keeps
-//! every read on the query's own thread (slower on remote files, identical results), which is the setting to reach for
-//! if a filesystem extension turns out not to cope, or in an environment that restricts thread creation.
+//! For read_grib2 the value is also the number of message fetches kept in flight, capped at
+//! GRIB2_MAX_PREFETCH_MESSAGES.
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
@@ -22,8 +24,10 @@
 
 namespace duckdb {
 
-constexpr int64_t GRIB2_DEFAULT_IO_THREADS = 8;
+constexpr int64_t GRIB2_DEFAULT_IO_THREADS = 1;
 constexpr int64_t GRIB2_MAX_IO_THREADS = 64;
+//! Most message fetches read_grib2 keeps in flight, however high grib2_io_threads is set
+constexpr int64_t GRIB2_MAX_PREFETCH_MESSAGES = 6;
 
 //! Validate on SET, so a bad value is reported where it is set rather than on the next query
 inline void ValidateIoThreads(ClientContext &context, SetScope scope, Value &parameter) {
@@ -38,12 +42,13 @@ inline void ValidateIoThreads(ClientContext &context, SetScope scope, Value &par
 
 inline void RegisterGrib2Settings(ExtensionLoader &loader) {
 	auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
-	config.AddExtensionOption(
-	    "grib2_io_threads",
-	    "Number of background threads grib2_index and read_grib2 use to overlap file reads (1 to " +
-	        std::to_string(GRIB2_MAX_IO_THREADS) + "). 1 keeps all reads on the query thread. Default " +
-	        std::to_string(GRIB2_DEFAULT_IO_THREADS) + ".",
-	    LogicalType::BIGINT, Value::BIGINT(GRIB2_DEFAULT_IO_THREADS), ValidateIoThreads);
+	config.AddExtensionOption("grib2_io_threads",
+	                          "Number of concurrent file reads grib2_index and read_grib2 may overlap (1 to " +
+	                              std::to_string(GRIB2_MAX_IO_THREADS) +
+	                              "). 1 keeps all reads on the query thread. Values above 1 use " +
+	                              "background threads, which helps with remote files. Default " +
+	                              std::to_string(GRIB2_DEFAULT_IO_THREADS) + ".",
+	                          LogicalType::BIGINT, Value::BIGINT(GRIB2_DEFAULT_IO_THREADS), ValidateIoThreads);
 }
 
 //! The grib2_io_threads setting, validated

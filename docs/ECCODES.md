@@ -32,8 +32,8 @@ message loading, and row production:
    and therefore requires a usable `.idx`.
 2. **Fetch selected message bytes.** The reader range-reads each selected message using the index offsets. It checks
    that the bytes contain a complete GRIB2 message whose length agrees with the index before passing them to ecCodes.
-   With `grib2_io_threads` above 1, upcoming message reads may run asynchronously (up to six in flight, with a 128 MiB
-   byte budget); ecCodes decoding and row emission remain on the query thread and preserve file/message order.
+   With `grib2_io_threads` above 1 (the default is 1, which keeps every read on the query thread), upcoming message
+   reads run asynchronously (up to that many, at most six, in flight, with a 128 MiB byte budget); ecCodes decoding and row emission remain on the query thread and preserve file/message order.
 3. **Create and inspect an ecCodes handle.** `OpenGribMessage` calls
    `codes_handle_new_from_message_copy`. The copy gives the handle its own message buffer. A small pre-check and
    section/data-representation checks are performed first to reject obvious non-GRIB input and several malformed or
@@ -105,7 +105,8 @@ used for names and grid details by `grib2_index(..., details := true)`, but that
 - Grid/value-order reference checks: [`grid_check.cpp`](../test/cpp/grid_check.cpp) and
   [`generate_grid_reference.py`](../test/data/generate_grid_reference.py)
 
-The supported formats and operational limits are summarized in the README's [What it reads](../README.md#what-it-reads)
-and [Settings, limits and untrusted input](../README.md#settings-limits-and-untrusted-input) sections. ecCodes performs
-the full-message decode and is not fuzzed by this repository; see the README's untrusted-input guidance before reading
-data from sources you do not trust.
+The supported formats and operational limits are summarized in the README's [Supported data](../README.md#supported-data)
+section and in [Supported inputs and operational limits](OPERATIONS.md). ecCodes performs the full-message decode. This
+repository mutation-tests that decode path in CI (`test/fuzz/eccodes_mutate.cpp`, against the distribution's ecCodes
+rather than the version built into the extension) but cannot rule out a crash on malformed input; see
+[Input caveats](OPERATIONS.md#input-caveats) before reading data from sources you do not trust.

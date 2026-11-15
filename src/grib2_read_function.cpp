@@ -263,8 +263,6 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 	return result;
 }
 
-//! How many messages are fetched ahead of the one being decoded
-constexpr idx_t PREFETCH_MESSAGES = 6;
 //! Upper bound on the bytes of messages held in flight, so large messages cannot multiply memory use by the prefetch
 //! depth. At least one message is always in flight, whatever its size.
 constexpr int64_t PREFETCH_BYTE_BUDGET = 128LL * 1024 * 1024;
@@ -304,9 +302,12 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	std::deque<PendingFetch> pending;
 	int64_t pending_bytes = 0;
 	idx_t prefetch_next = 0;
-	//! std::launch::async when background threads are allowed (grib2_io_threads > 1); deferred runs each fetch on the
-	//! scanning thread when it is needed
-	std::launch fetch_policy = std::launch::async;
+	//! std::launch::async when background threads are allowed (grib2_io_threads > 1); deferred (the default setting)
+	//! runs each fetch on the scanning thread when it is needed
+	std::launch fetch_policy = std::launch::deferred;
+	//! How many messages are fetched ahead of the one being decoded: grib2_io_threads, capped at
+	//! GRIB2_MAX_PREFETCH_MESSAGES. Always at least one.
+	idx_t prefetch_depth = 1;
 
 	// The message currently being emitted
 	bool loaded = false;
@@ -330,7 +331,9 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	std::sort(files.begin(), files.end(), [](const OpenFileInfo &a, const OpenFileInfo &b) { return a.path < b.path; });
 
 	state->fs = &fs;
-	state->fetch_policy = Grib2IoThreads(context) > 1 ? std::launch::async : std::launch::deferred;
+	const idx_t io_threads = Grib2IoThreads(context);
+	state->fetch_policy = io_threads > 1 ? std::launch::async : std::launch::deferred;
+	state->prefetch_depth = MinValue<idx_t>(io_threads, static_cast<idx_t>(GRIB2_MAX_PREFETCH_MESSAGES));
 
 	unique_ptr<duckdb_re2::RE2> search;
 	if (bind_data.has_search) {
@@ -343,7 +346,7 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	// Each message is validated as it is read, so the up-front check of the first message is skipped. Files are
 	// indexed several at a time; the results come back in path order.
 	const std::unordered_set<int64_t> wanted(bind_data.messages.begin(), bind_data.messages.end());
-	for (auto &rows : IndexFiles(fs, paths, true, false, false, Grib2IoThreads(context))) {
+	for (auto &rows : IndexFiles(fs, paths, true, false, false, Grib2IoThreads(context), &context)) {
 		for (auto &row : rows) {
 			if (!wanted.empty() && wanted.find(row.message_number) == wanted.end()) {
 				continue;
@@ -376,7 +379,7 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 
 //! Start fetching the bytes of upcoming messages, keeping a few in flight
 void FillPrefetch(Grib2ReadGlobalState &state) {
-	while (state.pending.size() < PREFETCH_MESSAGES && state.prefetch_next < state.messages.size()) {
+	while (state.pending.size() < state.prefetch_depth && state.prefetch_next < state.messages.size()) {
 		const Grib2IndexRow &row = state.messages[state.prefetch_next];
 		if (!state.pending.empty() && state.pending_bytes + row.byte_length > PREFETCH_BYTE_BUDGET) {
 			break;

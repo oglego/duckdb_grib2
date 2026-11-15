@@ -121,7 +121,8 @@ unique_ptr<GlobalTableFunctionState> Grib2IndexInit(ClientContext &context, Tabl
 		paths.push_back(file.path);
 	}
 	// Several files at once: for remote files the time is round trips, not CPU
-	for (auto &rows : IndexFiles(fs, paths, bind_data.use_idx, bind_data.details, true, Grib2IoThreads(context))) {
+	for (auto &rows :
+	     IndexFiles(fs, paths, bind_data.use_idx, bind_data.details, true, Grib2IoThreads(context), &context)) {
 		for (auto &row : rows) {
 			state->rows.push_back(std::move(row));
 		}

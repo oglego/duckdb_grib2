@@ -24,10 +24,18 @@ docs:
     LOAD httpfs;
     SET s3_region = 'us-east-1';
 
-    -- 2 m temperature at one point for six forecast hours from NOAA's NBM bucket.
-    -- Replace 20261023 with a recent run date: the bucket keeps a limited window of runs.
+    -- Check that the extension and its decoder loaded
+    SELECT grib2_eccodes_version();
+
+    -- Optional: overlap remote requests (the default of 1 keeps all reads on the query thread)
+    SET grib2_io_threads = 8;
+
+    -- NOAA's NBM bucket keeps a limited window of runs, so use yesterday's 00z run
+    SET VARIABLE run_date = strftime(current_date - 1, '%Y%m%d');
+
+    -- 2 m temperature at one point for six forecast hours
     SELECT valid_time, round(value, 1) AS kelvin
-    FROM read_grib2('s3://noaa-nbm-grib2-pds/blend.20261023/00/core/blend.t00z.core.f00[1-6].co.grib2',
+    FROM read_grib2('s3://noaa-nbm-grib2-pds/blend.' || getvariable('run_date') || '/00/core/blend.t00z.core.f00[1-6].co.grib2',
                     search := '^TMP:2 m above ground:\d+ hour fcst$',
                     points := [{'lat': 37.209, 'lon': -93.2923}])
     ORDER BY valid_time;

@@ -752,6 +752,12 @@ SELECT * FROM read_grib2('fixtures/nbm_ak_msg.grib2', search := repeat('a', 2000
 ----
 search is longer than
 
+# grib2_io_threads defaults to 1: every read stays on the query thread unless the user opts in
+query I
+SELECT current_setting('grib2_io_threads');
+----
+1
+
 # grib2_io_threads: a bad value is rejected when it is set
 statement error
 SET grib2_io_threads = 0;
@@ -780,8 +786,25 @@ SELECT count(*) FROM grib2_index('fixtures/nbm_??_msg.grib2');
 ----
 4
 
+# Opting in to overlapped reads gives the same rows in the same order
 statement ok
 SET grib2_io_threads = 8;
+
+query TIR
+SELECT file_path, message_number, round(value, 1) FROM read_grib2('fixtures/nbm_??_msg.grib2', points := [{'lat': 58.0874, 'lon': -154.1681}, {'lat': 13.818, 'lon': 147.0361}, {'lat': 22.005, 'lon': -154.4903}, {'lat': 17.7425, 'lon': -66.4248}]);
+----
+fixtures/nbm_ak_msg.grib2	1	275.700
+fixtures/nbm_gu_msg.grib2	1	969.000
+fixtures/nbm_hi_msg.grib2	1	298.900
+fixtures/nbm_pr_msg.grib2	1	308.000
+
+query I
+SELECT count(*) FROM grib2_index('fixtures/nbm_??_msg.grib2');
+----
+4
+
+statement ok
+SET grib2_io_threads = 1;
 
 # An empty message list is an error, not "read every message"
 statement error
