@@ -82,8 +82,14 @@ static void FillFromSections(Grib2IndexRow &row, const MessageSummary &summary, 
 	}
 }
 
-//! Names, level and grid details from ecCodes, using only the short prefix already read
-static void FillDetails(Grib2IndexRow &row, const std::string &prefix) {
+//! Names, level and grid details from ecCodes, using only the short prefix already read (sections 0 to 5).
+//! The prefix reaches ecCodes without the checks the decode path applies, so a message that claims more points than
+//! the extension will ever decode, or whose prefix is implausibly large, gets no details: its row is still listed.
+static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const std::string &prefix) {
+	std::string unused_error;
+	if (!CheckMessageCounts(summary, unused_error) || static_cast<int64_t>(prefix.size()) > MAX_DETAILS_PREFIX_BYTES) {
+		return;
+	}
 	CodesHandlePtr handle(codes_handle_new_from_partial_message_copy(nullptr, prefix.data(), prefix.size()));
 	if (!handle) {
 		return;
@@ -160,7 +166,7 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 				}
 				if (details) {
 					FillFromSections(row, summary, false);
-					FillDetails(row, prefix);
+					FillDetails(row, summary, prefix);
 				}
 			}
 			rows.push_back(std::move(row));
@@ -189,7 +195,7 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 		row.byte_length = length;
 		FillFromSections(row, summary, true);
 		if (details) {
-			FillDetails(row, prefix);
+			FillDetails(row, summary, prefix);
 		}
 		rows.push_back(std::move(row));
 		offset += length;

@@ -12,9 +12,13 @@ namespace duckdb {
 //! Largest .idx sidecar that is read. A real inventory is tens of kilobytes (about 150 bytes a message); the whole file
 //! is held in memory, so a much larger one is a mistake or an attack, not an inventory.
 constexpr int64_t MAX_IDX_BYTES = 64LL * 1024 * 1024;
-//! Largest single message that is fetched and decoded. NBM messages are a few megabytes; this leaves a wide margin
-//! while stopping a corrupt index or message length from asking for gigabytes at once.
-constexpr int64_t MAX_MESSAGE_BYTES = 1024LL * 1024 * 1024;
+//! Largest single message that is fetched and decoded. NBM and HRRR messages are a few megabytes at most; this leaves a
+//! wide margin while stopping a corrupt index or message length from asking for gigabytes at once. ecCodes copies the
+//! message, so a message at the limit costs about twice this in memory before any value is decoded.
+constexpr int64_t MAX_MESSAGE_BYTES = 256LL * 1024 * 1024;
+//! Largest prefix (sections 0 to 5) handed to ecCodes by grib2_index(..., details := true). The sections it needs are
+//! well under a kilobyte for the grids this extension supports; a prefix this large is not a real header.
+constexpr int64_t MAX_DETAILS_PREFIX_BYTES = 1024LL * 1024;
 
 //! One row of the message index: where a GRIB message is and what it contains. Which fields are set depends on how
 //! the index was built (see IndexFile); the rest stay empty.

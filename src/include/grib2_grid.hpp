@@ -23,9 +23,11 @@
 
 namespace duckdb {
 
-//! Largest grid (ni * nj) accepted. A decoded message is held in memory as doubles, so this bounds a single message at
-//! about 2 GB and also keeps ni * nj well inside int64 arithmetic. NBM CONUS is 3.7 million cells.
-constexpr int64_t MAX_GRID_CELLS = 250000000;
+//! Largest grid (ni * nj) accepted. A decoded message is held in memory as doubles and ecCodes works on a second copy
+//! while unpacking, so this bounds the decode of a single message at about 1 GiB (16 bytes a cell). That memory is not
+//! counted against DuckDB's memory_limit. It also keeps ni * nj well inside int64 arithmetic. For scale: NBM CONUS is
+//! 3.7 million cells, HRRR 1.9 million, ECMWF 0.1 degree global 6.5 million, MRMS CONUS 24.5 million.
+constexpr int64_t MAX_GRID_CELLS = 64000000;
 
 //! Check the numbers read from a message's grid definition before building a grid from them. A corrupt or hostile
 //! message could otherwise give zero or negative spacing (division by zero), NaN, or a huge grid.

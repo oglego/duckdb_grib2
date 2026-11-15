@@ -21,7 +21,11 @@ complete and its evidence is reviewed.
   ecCodes decode them as NaN. Fixtures and tests cover both cases (`test/cpp/missing_value_check.cpp`, SQL tests). Not
   yet exercised against the ecCodes the extension vendors (2.47.0); the CI check uses Ubuntu's ecCodes.
 - [ ] **Test query resource limits under adversarial inputs.** Exercise documented size, memory, cancellation, and
-  concurrency limits with hostile or malformed inputs.
+  concurrency limits with hostile or malformed inputs. Done so far: the caps are lowered to values no known public
+  product approaches (64 million cells, 256 MiB a message, about 1 GiB to decode the largest allowed message), a message
+  that claims more points than that is refused before ecCodes sees it, and `grib2_index(..., details := true)` applies
+  the same limit and a 1 MiB prefix cap (`test/data/huge_count.grib2`). Decode memory is still not counted against
+  `memory_limit`, and cancellation under a slow remote read and many concurrent queries have not been tested.
 - [ ] **Qualify decoding of untrusted data.** The local `.idx` and section parsers have sanitizer/fuzz coverage, and
   only packing templates 5.0, 5.2 and 5.3 are allowed through to ecCodes (all others are refused up front). ecCodes'
   full-message decoder is still only mutation-tested against the distribution's ecCodes rather than the vendored

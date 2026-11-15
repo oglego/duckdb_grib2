@@ -600,6 +600,24 @@ SELECT i, j, round(value, 3) FROM read_grib2('test/data/simple_9999.grib2', poin
 0	0	9999.000
 1	0	131.000
 
+# A message that claims 300 million points (test/data/generate_huge_count_sample.py) is refused before ecCodes sees it.
+# The index still lists it, but does not hand it to ecCodes for details.
+statement error
+SELECT * FROM read_grib2('test/data/huge_count.grib2', all_cells := true);
+----
+the message claims 300000000 grid points
+
+query IIIII
+SELECT message_number, packing_template, short_name IS NULL, grid_type IS NULL, ni IS NULL FROM grib2_index('test/data/huge_count.grib2', details := true);
+----
+1	0	true	true	true
+
+# The same message without the corrupt count gets its details
+query III
+SELECT short_name IS NULL, grid_type, ni FROM grib2_index('fixtures/hrrr_msg90_csnow_simple_const.grib2', details := true);
+----
+false	lambert	1799
+
 # Errors
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');

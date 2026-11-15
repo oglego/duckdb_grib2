@@ -42,12 +42,13 @@ outside the supported range is left unset, so `valid_time` is NULL:
 | Limit | Value |
 |---|---|
 | `.idx` file size | 64 MiB |
-| One message | 1 GiB |
-| Grid size (`Ni x Nj`) | 250 million cells |
+| One message | 256 MiB |
+| Grid size (`Ni x Nj`) | 64 million cells |
 | `search` pattern length | 1024 characters |
 | Message bytes held in flight by prefetching | 128 MiB (at least one message) |
 | Packing templates decoded | 5.0, 5.2 and 5.3 only |
-| Grid or data points a message may claim (checked before ecCodes sees it) | 250 million |
+| Grid or data points a message may claim (checked before ecCodes sees it) | 64 million |
+| Message prefix given to ecCodes by `grib2_index(..., details := true)` | 1 MiB, and the same point-count limit |
 | Message length field | 2^62 (far above any real message; larger is refused) |
 | Forecast step read from an `.idx` line | 0 to 1,000,000 hours (otherwise `valid_time` is NULL) |
 
@@ -57,9 +58,11 @@ the limit are rejected rather than producing incorrect or non-finite coordinates
 ## Input caveats
 
 - **Untrusted input:** the `.idx` and section-header parsers are covered by sanitizer and fuzz runs in CI, and only the
-  two packing templates the extension validates in depth are passed to ecCodes for decoding. (`grib2_index(...,
-  details := true)` still gives ecCodes a short, unscreened message prefix to read names and grid keys.) ecCodes parses
-  the full message and is not fuzzed here. Read files you trust, or run DuckDB where a crash is contained, when the source
+  three packing templates the extension validates in depth (5.0, 5.2, 5.3) are passed to ecCodes for decoding.
+  (`grib2_index(..., details := true)` gives ecCodes a short prefix, sections 0 to 5, to read names and grid keys. A
+  message that claims more points than the limit below, or whose prefix exceeds 1 MiB, gets no details.) ecCodes parses
+  the full message. Its decoder is mutation-tested in CI against the distribution's ecCodes, not the version built into
+  the extension, so it may still crash on malformed input. Read files you trust, or run DuckDB where a crash is contained, when the source
   is not under your control. Malformed messages usually produce an error, but ecCodes could still crash.
 - **URLs with query strings:** presigned URLs do not get a sidecar lookup because `.idx` is appended to the whole URL.
   The inventory is therefore not found and `search` is unavailable; use `message := ...` instead.
