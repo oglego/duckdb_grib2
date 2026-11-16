@@ -17,6 +17,8 @@
 #include "grib2_vector_writers.hpp"
 
 #include "duckdb.hpp"
+#include "duckdb/parser/parsed_data/create_function_info.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/types/time.hpp"
@@ -202,10 +204,30 @@ void Grib2IndexScan(ClientContext &context, TableFunctionInput &data, DataChunk 
 } // namespace
 
 void RegisterGrib2IndexFunction(ExtensionLoader &loader) {
-	TableFunction function("grib2_index", {LogicalType::VARCHAR}, Grib2IndexScan, Grib2IndexBind, Grib2IndexInit);
-	function.GetSignature().AddKeywordOnly("idx", LogicalType::BOOLEAN, Value::BOOLEAN(true));
-	function.GetSignature().AddKeywordOnly("details", LogicalType::BOOLEAN, Value::BOOLEAN(false));
-	loader.RegisterFunction(function);
+	// The path is declared positional-only with a real name (it used to be the auto-named col0) so that
+	// duckdb_functions() reports it; it is still passed positionally.
+	TableFunction function("grib2_index", vector<LogicalType> {}, Grib2IndexScan, Grib2IndexBind, Grib2IndexInit);
+	auto &signature = function.GetSignature();
+	signature.AddPositionalOnly("path", LogicalType::VARCHAR);
+	signature.AddKeywordOnly("idx", LogicalType::BOOLEAN, Value::BOOLEAN(true));
+	signature.AddKeywordOnly("details", LogicalType::BOOLEAN, Value::BOOLEAN(false));
+
+	// The bare loader.RegisterFunction(TableFunction) overload cannot carry documentation. The CreateInfo form can, but
+	// it must ask for ALTER_ON_CONFLICT itself: that is what the bare overload sets, while the default is
+	// ERROR_ON_CONFLICT.
+	CreateTableFunctionInfo info(std::move(function));
+	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+
+	FunctionDescription description;
+	description.parameter_types = {LogicalType::VARCHAR};
+	description.parameter_names = {"path", "idx", "details"};
+	description.description = "Lists the messages in one or more GRIB2 files, one row per message, with byte location, "
+	                          "inventory text and grid and packing metadata.";
+	description.examples.push_back("SELECT * FROM grib2_index('path/to/file.grib2')");
+	description.categories.push_back("grib2");
+	info.descriptions.push_back(std::move(description));
+
+	loader.RegisterFunction(std::move(info));
 }
 
 } // namespace duckdb

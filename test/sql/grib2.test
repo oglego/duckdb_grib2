@@ -17,6 +17,27 @@ SELECT regexp_matches(grib2_eccodes_version(), '^\d+\.\d+\.\d+$');
 ----
 true
 
+# Every function is documented, and none reports auto-generated col0/col1 parameter names
+query II
+SELECT count(*), count(*) FILTER (WHERE array_to_string(parameters, ',') LIKE '%col%')
+FROM duckdb_functions()
+WHERE function_name IN ('grib2_eccodes_version', 'grib2_message_info', 'grib2_point_value', 'grib2_index', 'read_grib2')
+  AND description IS NOT NULL AND len(examples) = 1 AND len(categories) = 1;
+----
+5	0
+
+# The parameters keep their real names and order
+query TT
+SELECT function_name, array_to_string(parameters, ',')
+FROM duckdb_functions()
+WHERE function_name IN ('grib2_message_info', 'grib2_point_value', 'grib2_index', 'read_grib2')
+ORDER BY function_name;
+----
+grib2_index	path,idx,details
+grib2_message_info	blob
+grib2_point_value	blob,lat,lon
+read_grib2	path,message,search,points,bbox,all_cells
+
 # Decode spike: decode one GRIB2 message (complex packing with spatial differencing)
 # from an in-memory blob. This confirms ecCodes definitions and the packing codec work.
 query I

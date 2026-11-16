@@ -17,6 +17,8 @@
 #include "grib2_vector_writers.hpp"
 
 #include "duckdb.hpp"
+#include "duckdb/parser/parsed_data/create_function_info.hpp"
+#include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/re2_regex.hpp"
@@ -585,15 +587,36 @@ void Grib2ReadScan(ClientContext &context, TableFunctionInput &data, DataChunk &
 } // namespace
 
 void RegisterGrib2ReadFunction(ExtensionLoader &loader) {
-	TableFunction function("read_grib2", {LogicalType::VARCHAR}, Grib2ReadScan, Grib2ReadBind, Grib2ReadInit);
+	// The path is declared positional-only with a real name (it used to be the auto-named col0) so that
+	// duckdb_functions() reports it; it is still passed positionally.
+	TableFunction function("read_grib2", vector<LogicalType> {}, Grib2ReadScan, Grib2ReadBind, Grib2ReadInit);
 	auto &signature = function.GetSignature();
+	signature.AddPositionalOnly("path", LogicalType::VARCHAR);
 	// A keyword-only parameter without a default is required, so the optional ones default to NULL
 	signature.AddKeywordOnly("message", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("search", LogicalType::VARCHAR, Value(LogicalType::VARCHAR));
 	signature.AddKeywordOnly("points", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("bbox", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("all_cells", LogicalType::BOOLEAN, Value::BOOLEAN(false));
-	loader.RegisterFunction(function);
+
+	// The bare loader.RegisterFunction(TableFunction) overload cannot carry documentation. The CreateInfo form can, but
+	// it must ask for ALTER_ON_CONFLICT itself: that is what the bare overload sets, while the default is
+	// ERROR_ON_CONFLICT.
+	CreateTableFunctionInfo info(std::move(function));
+	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+
+	FunctionDescription description;
+	description.parameter_types = {LogicalType::VARCHAR};
+	description.parameter_names = {"path", "message", "search", "points", "bbox", "all_cells"};
+	description.description = "Decodes GRIB2 messages into one row per selected cell, at the nearest grid cell to each "
+	                          "point, inside a bounding box, or across the whole grid, with cells masked by a bitmap "
+	                          "returned as NULL.";
+	description.examples.push_back("SELECT * FROM read_grib2('path/to/file.grib2', search := 'TMP:2 m above ground', "
+	                               "points := [{'lat': 37.21, 'lon': -93.29}])");
+	description.categories.push_back("grib2");
+	info.descriptions.push_back(std::move(description));
+
+	loader.RegisterFunction(std::move(info));
 }
 
 } // namespace duckdb

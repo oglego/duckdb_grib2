@@ -16,6 +16,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include <duckdb/parser/parsed_data/create_function_info.hpp>
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
 
 // ecCodes linked through vcpkg
@@ -119,27 +120,67 @@ inline void Grib2PointValueScalarFun(DataChunk &args, ExpressionState &state, Ve
 	    });
 }
 
+//! Registers a scalar function with its documentation. Unlike the bare loader.RegisterFunction(ScalarFunction)
+//! overload, this form can carry a FunctionDescription, and it has to ask for ALTER_ON_CONFLICT itself: that is what
+//! the bare overload sets internally, while the default on CreateInfo is ERROR_ON_CONFLICT.
+static void RegisterDocumentedScalar(ExtensionLoader &loader, ScalarFunction function,
+                                     vector<LogicalType> parameter_types, vector<string> parameter_names,
+                                     string description, string example) {
+	CreateScalarFunctionInfo info(std::move(function));
+	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
+
+	FunctionDescription function_description;
+	function_description.parameter_types = std::move(parameter_types);
+	function_description.parameter_names = std::move(parameter_names);
+	function_description.description = std::move(description);
+	function_description.examples.push_back(std::move(example));
+	function_description.categories.push_back("grib2");
+	info.descriptions.push_back(std::move(function_description));
+
+	loader.RegisterFunction(std::move(info));
+}
+
 static void LoadInternal(ExtensionLoader &loader) {
 	RegisterGrib2Settings(loader);
 
 	auto eccodes_version_function =
 	    ScalarFunction("grib2_eccodes_version", {}, LogicalType::VARCHAR, Grib2EccodesVersionScalarFun);
-	loader.RegisterFunction(eccodes_version_function);
+	RegisterDocumentedScalar(loader, std::move(eccodes_version_function), {}, {},
+	                         "Returns the version of the ecCodes library the extension is linked against, as "
+	                         "major.minor.revision.",
+	                         "grib2_eccodes_version()");
 
 	RegisterGrib2IndexFunction(loader);
 	RegisterGrib2ReadFunction(loader);
 
-	// Helpers for messages held in a BLOB (see the comment above the implementations)
+	// Helpers for messages held in a BLOB (see the comment above the implementations). The parameters are declared
+	// positional-only with real names: that is how the old col0/col1 parameters behaved, and it makes
+	// duckdb_functions() report the real names.
 	auto message_info_function =
-	    ScalarFunction("grib2_message_info", {LogicalType::BLOB}, LogicalType::VARCHAR, Grib2MessageInfoScalarFun);
+	    ScalarFunction("grib2_message_info",
+	                   {FunctionParameter("blob", LogicalType::BLOB, {}, FunctionParameterKind::POSITIONAL_ONLY)},
+	                   LogicalType::VARCHAR, Grib2MessageInfoScalarFun);
 	message_info_function.SetFallible();
-	loader.RegisterFunction(message_info_function);
+	RegisterDocumentedScalar(
+	    loader, std::move(message_info_function), {LogicalType::BLOB}, {"blob"},
+	    "Returns a semicolon-separated key=value summary of the first GRIB message in a BLOB: edition, shortName, "
+	    "typeOfLevel, level, gridType, Ni, Nj, numberOfPoints, packingType, alternativeRowScanning, the number of "
+	    "values, and their min and max.",
+	    "grib2_message_info((SELECT content FROM read_blob('path/to/file.grib2')))");
 
 	auto point_value_function =
-	    ScalarFunction("grib2_point_value", {LogicalType::BLOB, LogicalType::DOUBLE, LogicalType::DOUBLE},
+	    ScalarFunction("grib2_point_value",
+	                   {FunctionParameter("blob", LogicalType::BLOB, {}, FunctionParameterKind::POSITIONAL_ONLY),
+	                    FunctionParameter("lat", LogicalType::DOUBLE, {}, FunctionParameterKind::POSITIONAL_ONLY),
+	                    FunctionParameter("lon", LogicalType::DOUBLE, {}, FunctionParameterKind::POSITIONAL_ONLY)},
 	                   LogicalType::DOUBLE, Grib2PointValueScalarFun);
 	point_value_function.SetFallible();
-	loader.RegisterFunction(point_value_function);
+	RegisterDocumentedScalar(
+	    loader, std::move(point_value_function), {LogicalType::BLOB, LogicalType::DOUBLE, LogicalType::DOUBLE},
+	    {"blob", "lat", "lon"},
+	    "Returns the decoded value at the grid cell nearest to a latitude and longitude in the first GRIB message of a "
+	    "BLOB, or NULL when the point is outside the grid.",
+	    "grib2_point_value((SELECT content FROM read_blob('path/to/file.grib2')), 37.21, -93.29)");
 }
 
 void Grib2Extension::Load(ExtensionLoader &loader) {
