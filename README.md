@@ -17,6 +17,13 @@
 [ecCodes](https://github.com/ecmwf/eccodes) to decode values and can read local files or remote files through DuckDB's
 `httpfs` extension.
 
+> **Scope and limitations (v0.1).** Verified only on NOAA NBM (CONUS, Alaska, Hawaii, Puerto Rico, Guam) and the HRRR
+> CONUS surface file. Supported grids are Lambert conformal, north polar stereographic and Mercator on a spherical
+> earth, and supported packing templates are 5.0, 5.2 and 5.3. **Regular latitude/longitude grids, which GFS and many
+> other GRIB2 files use, are not supported yet**, nor are Gaussian grids (ECMWF), ellipsoidal earths, south polar grids
+> or JPEG 2000 / CCSDS packing. Such files are refused with an error naming the unsupported feature, and
+> `grib2_index` still lists their messages. Details: [supported inputs and operational limits](docs/OPERATIONS.md).
+
 ### Examples
 
 ```bash

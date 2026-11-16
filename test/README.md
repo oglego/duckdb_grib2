@@ -1,5 +1,12 @@
 # Testing this extension
-This directory contains all the tests for this extension. The `sql` directory holds tests that are written as [SQLLogicTests](https://duckdb.org/dev/sqllogictest/intro.html). DuckDB aims to have most its tests in this format as SQL statements, so for the grib2 extension, this should probably be the goal too.
+
+This directory holds the tests for the extension:
+
+- `sql/`: [SQLLogicTests](https://duckdb.org/dev/sqllogictest/intro.html) that exercise every SQL function through DuckDB.
+- `cpp/` and `fuzz/`: standalone C++ checks and fuzz targets for the parsers, grid math and missing-value handling. They
+  need no DuckDB build; see "Robustness and fuzzing" below.
+- `herbie_compare/`: a Python suite that compares results with Herbie and ecCodes (see its own README).
+- `data/`: test data and the scripts that generate it (see "Test data" below).
 
 The root makefile contains targets to build and run all of these tests. To run the SQLLogicTests:
 ```bash
