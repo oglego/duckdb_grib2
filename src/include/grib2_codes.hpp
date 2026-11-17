@@ -261,6 +261,12 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 			throw InvalidInputException(std::string(function) +
 			                            ": the Lambert conformal standard parallels or orientation are not valid");
 		}
+		// Parallels that mirror each other about the equator also give a cone constant of zero
+		if (!LambertGrid::ConeConstantIsValid(LambertGrid::ConeConstant(spec.latin1, spec.latin2))) {
+			throw InvalidInputException(std::string(function) +
+			                            ": the Lambert conformal standard parallels do not define a cone (Latin1 " +
+			                            std::to_string(spec.latin1) + ", Latin2 " + std::to_string(spec.latin2) + ")");
+		}
 	} else if (spec.type == "polar_stereographic") {
 		if (Grib2LongKey(h, "southPoleOnProjectionPlane", function) != 0) {
 			throw NotImplementedException(std::string(function) + ": south polar stereographic is not supported yet");

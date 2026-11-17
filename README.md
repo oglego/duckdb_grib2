@@ -21,7 +21,7 @@
 > CONUS surface file. Supported grids are Lambert conformal, north polar stereographic and Mercator on a spherical
 > earth, and supported packing templates are 5.0, 5.2 and 5.3. **Regular latitude/longitude grids, which GFS and many
 > other GRIB2 files use, are not supported yet**, nor are Gaussian grids (ECMWF), ellipsoidal earths, south polar grids
-> or JPEG 2000 / CCSDS packing. Such files are refused with an error naming the unsupported feature, and
+> JPEG 2000 / CCSDS packing, or messages that hold more than one field. Such files are refused with an error naming the unsupported feature, and
 > `grib2_index` still lists their messages. Details: [supported inputs and operational limits](docs/OPERATIONS.md).
 
 ### Examples

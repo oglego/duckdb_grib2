@@ -256,17 +256,30 @@ private:
 //! Lambert conformal conic (GRIB2 grid template 3.30). Used for CONUS.
 class LambertGrid final : public ProjectedGrid {
 public:
+	//! The cone constant n for standard parallels latin1 and latin2 (degrees). It is zero when the parallels mirror
+	//! each other about the equator (for example 30 and -30) or both lie on it: that is a cylinder, not a cone, and the
+	//! projection formulas divide by n.
+	static double ConeConstant(double latin1_deg, double latin2_deg) {
+		const double p1 = latin1_deg * DEG;
+		const double p2 = latin2_deg * DEG;
+		if (std::fabs(p1 - p2) < 1e-12) {
+			return std::sin(p1);
+		}
+		return std::log(std::cos(p1) / std::cos(p2)) / std::log(std::tan(PI / 4 + p2 / 2) / std::tan(PI / 4 + p1 / 2));
+	}
+
+	//! Whether a cone constant can be projected with: finite and clearly away from zero. Real grids sit far from the
+	//! limit (CONUS has n of about 0.62, polar grids approach 1).
+	static bool ConeConstantIsValid(double n) {
+		return std::isfinite(n) && std::fabs(n) >= 1e-6;
+	}
+
 	LambertGrid(int64_t ni_p, int64_t nj_p, double la1_deg, double lo1_deg, double lad_deg, double lov_deg,
 	            double latin1_deg, double latin2_deg, double dx_m, double dy_m, double radius_m)
 	    : ProjectedGrid(ni_p, nj_p, dx_m, dy_m, radius_m), lov(lov_deg) {
 		const double p1 = latin1_deg * DEG;
-		const double p2 = latin2_deg * DEG;
 		const double p0 = lad_deg * DEG;
-		if (std::fabs(p1 - p2) < 1e-12) {
-			n = std::sin(p1);
-		} else {
-			n = std::log(std::cos(p1) / std::cos(p2)) / std::log(std::tan(PI / 4 + p2 / 2) / std::tan(PI / 4 + p1 / 2));
-		}
+		n = ConeConstant(latin1_deg, latin2_deg);
 		f = std::cos(p1) * std::pow(std::tan(PI / 4 + p1 / 2), n) / n;
 		rho0 = radius * f / std::pow(std::tan(PI / 4 + p0 / 2), n);
 		SetOrigin(la1_deg, lo1_deg);

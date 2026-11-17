@@ -145,6 +145,32 @@ int main(int argc, char **argv) {
 		Summarize(region, stats);
 	}
 
+	{ // The Lambert cone constant: zero (or not finite) for parallels that do not define a cone, which the extension
+	  // refuses
+		const struct {
+			double latin1, latin2;
+			bool valid;
+		} cones[] = {{38.5, 38.5, true},   {25.0, 25.0, true},   {30.0, 60.0, true},
+		             {-30.0, -60.0, true}, {38.5, -38.5, false}, {-38.5, 38.5, false},
+		             {30.0, -30.0, false}, {45.0, -45.0, false}, {0.0, 0.0, false}};
+		for (const auto &c : cones) {
+			const double n = LambertGrid::ConeConstant(c.latin1, c.latin2);
+			if (LambertGrid::ConeConstantIsValid(n) != c.valid) {
+				failures++;
+				std::printf("FAIL: Lambert parallels %g and %g give n = %g, expected %s\n", c.latin1, c.latin2, n,
+				            c.valid ? "a usable cone" : "a refused one");
+			}
+		}
+		// A grid built from valid parallels projects to finite coordinates (HRRR: 38.5 N, 262.5 E)
+		const LambertGrid hrrr(1799, 1059, 21.138123, -122.719528, 38.5, -97.5, 38.5, 38.5, 3000.0, 3000.0, 6371229.0);
+		double lat = 0, lon = 0;
+		hrrr.Inverse(900, 500, lat, lon);
+		if (!std::isfinite(lat) || !std::isfinite(lon)) {
+			failures++;
+			std::printf("FAIL: HRRR grid cell (900, 500) has lat %g lon %g\n", lat, lon);
+		}
+	}
+
 	std::printf("regions=%d failures=%d\n", regions, failures);
 	return failures == 0 && regions > 0 ? 0 : 1;
 }

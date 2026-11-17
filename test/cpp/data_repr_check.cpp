@@ -105,7 +105,8 @@ int main() {
 	                       "fixtures/hrrr_msg70_snod_spatial.grib2",
 	                       "test/data/simple_window.grib2",
 	                       "test/data/simple_bitmap.grib2",
-	                       "test/data/simple_9999.grib2"};
+	                       "test/data/simple_9999.grib2",
+	                       "test/data/degenerate_lambert.grib2"}; // structurally valid; its grid is refused later
 	int messages = 0;
 	std::vector<uint8_t> complex_spatial; // template 5.3, used for the corruption cases
 	std::vector<uint8_t> complex_plain;   // template 5.2
@@ -282,6 +283,28 @@ int main() {
 			Check(error.find("packing template") != std::string::npos,
 			      "unhelpful error for template " + std::to_string(tpl) + ": " + error);
 		}
+	}
+	{ // A message that repeats sections 4 to 7 holds more than one field; ecCodes decodes only the first
+		const std::vector<uint8_t> single = ReadFile("fixtures/hrrr_msg90_csnow_simple_const.grib2");
+		const std::vector<uint8_t> multi = ReadFile("test/data/multi_field.grib2");
+		Check(!single.empty() && !multi.empty(), "cannot read the single-field or multi-field message");
+		std::string error;
+		Check(Accepted(single, error), "the single-field source message was refused: " + error);
+		error.clear();
+		Check(!Accepted(multi, error), "test/data/multi_field.grib2 was accepted");
+		Check(error.find("more than one field") != std::string::npos,
+		      "unhelpful error for a multi-field message: " + error);
+		// Repeating only the bitmap and data sections (6 and 7) is a second field too
+		const size_t s6 = FindSection(single, 6);
+		std::vector<uint8_t> repeated(single.begin(), single.end() - 4);
+		repeated.insert(repeated.end(), single.begin() + s6, single.end() - 4);
+		repeated.insert(repeated.end(), {'7', '7', '7', '7'});
+		for (int b = 0; b < 8; b++) {
+			repeated[8 + b] = static_cast<uint8_t>(static_cast<uint64_t>(repeated.size()) >> (8 * (7 - b)));
+		}
+		error.clear();
+		Check(!Accepted(repeated, error), "a message that repeats sections 6 and 7 was accepted");
+		Check(error.find("more than one field") != std::string::npos, "unhelpful error for repeated 6 and 7: " + error);
 	}
 	std::cout << "checks=" << checks << " messages=" << messages << " failures=" << failures << "\n";
 	return failures ? 1 : 0;

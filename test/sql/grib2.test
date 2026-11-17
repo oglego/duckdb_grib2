@@ -633,6 +633,24 @@ SELECT message_number, packing_template, short_name IS NULL, grid_type IS NULL, 
 ----
 1	0	true	true	true
 
+# Lambert standard parallels that mirror each other (Latin1 = 38.5, Latin2 = -38.5; test/data/generate_degenerate_lambert_sample.py)
+# have a cone constant of zero: the grid is refused instead of every cell coming back with NaN coordinates.
+statement error
+SELECT * FROM read_grib2('test/data/degenerate_lambert.grib2', all_cells := true);
+----
+do not define a cone
+
+statement error
+SELECT * FROM read_grib2('test/data/degenerate_lambert.grib2', points := [{'lat': 40.0, 'lon': -100.0}]);
+----
+do not define a cone
+
+# A message that holds two fields (test/data/generate_multi_field_sample.py) is refused: ecCodes decodes only the first one.
+statement error
+SELECT * FROM read_grib2('test/data/multi_field.grib2', all_cells := true);
+----
+more than one field
+
 # The same message without the corrupt count gets its details
 query III
 SELECT short_name IS NULL, grid_type, ni FROM grib2_index('fixtures/hrrr_msg90_csnow_simple_const.grib2', details := true);

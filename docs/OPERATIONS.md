@@ -8,7 +8,11 @@ the combinations tested here; other GRIB2 data may work but has not been qualifi
 - **Grids:** Lambert conformal (NBM CONUS), north polar stereographic (NBM Alaska), and Mercator (NBM Hawaii, Puerto Rico,
   Guam), on a spherical earth, with the usual scanning mode (rows stored west to east and south to north, with or without
   alternating row direction). Other grid types (for example regular latitude/longitude, as in GFS), ellipsoidal earths,
-  south polar grids, and other scanning modes are not supported.
+  south polar grids, and other scanning modes are not supported. A Lambert grid whose standard parallels do not define
+  a cone (mirror images of each other, such as 30 and -30 degrees, or both on the equator) is refused with an error.
+- **One field per message:** a GRIB2 message may repeat sections 4 to 7 to carry several fields. ecCodes decodes only the
+  first, so `read_grib2`, `grib2_message_info` and `grib2_point_value` refuse such a message with an error ("more than
+  one field") instead of silently dropping the rest. NOAA's NBM and HRRR files hold one field per message.
 - **Packing:** ecCodes decodes the values, but only for packing templates 5.0 (simple), 5.2 (complex) and 5.3 (complex with
   spatial differencing). NBM uses 5.2 and 5.3 and HRRR uses 5.0 and 5.3, and the extension checks all three layouts in
   depth before ecCodes sees the message. A message with any other template (5.40 JPEG 2000, 5.42 CCSDS, ...) is refused by `read_grib2`,

@@ -259,6 +259,12 @@ inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const Mess
 			error = "the sections of the message do not add up to its length";
 			return false;
 		}
+		// A second data representation, bitmap or data section starts another field in the same message. The decoder
+		// reads only the first field, so rather than silently dropping the rest the message is refused.
+		if ((number == 5 && section5) || (number == 6 && section6) || (number == 7 && section7)) {
+			error = "the message holds more than one field (multi-field messages are not supported)";
+			return false;
+		}
 		if (number == 5 && !section5) {
 			section5 = data + pos;
 			section5_length = length;
