@@ -213,7 +213,8 @@ and decodes each selected message in turn.
 - **Masked cells** have a NULL `value`. **Points outside the grid produce no row** (a point inside a message's grid but on
   a masked cell does produce one, with a NULL value).
 - **Cost:** about one decode per message (roughly 320 ms for a CONUS message in the sandbox measurements above), whatever
-  the spatial selection, because a spatial filter cannot skip decoding. Single-threaded for now. Cell selection (point
+  the spatial selection, because a spatial filter cannot skip decoding. Decoding stays on the scan thread; setting
+  `grib2_io_threads` above 1 overlaps remote reads and indexes multiple files concurrently. Cell selection (point
   lookups, box windows) is computed once and reused while consecutive messages share a grid (compared by their
   grid parameters), which is the case for every message in an NBM file.
 - **Remote:** verified over HTTPS and `s3://` against the public NBM bucket: the inventory of a 156 MB file in 0.4 s, one
@@ -234,7 +235,9 @@ and decodes each selected message in turn.
 - **Requests per file in `read_grib2`:** open the data file, open the sidecar directly (a 404 returns nothing, instead of a
   separate existence check), read the sidecar, then one read per selected message. Each message is validated as it is read,
   which also catches a sidecar that does not belong to the file.
-- **Not yet:** `s3://` and bucket globs (untested), `WHERE lat/lon` pushdown, parallel scans, bilinear interpolation.
+- **Not yet:** `WHERE lat/lon` pushdown, parallel message decoding, and bilinear interpolation. HTTPS, public `s3://`,
+  and S3 globs were exercised; other filesystems, credentials through DuckDB secrets, and arbitrary buckets are not
+  qualified (see [Supported inputs and operational limits](OPERATIONS.md)).
 
 Tests cover points on odd and even rows against ecCodes' own nearest-point values, input order, points outside the grid,
 `search` and `message` selection with `valid_time`, a bbox and a whole grid over the synthetic masked message

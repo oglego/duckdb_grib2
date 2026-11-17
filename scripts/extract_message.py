@@ -16,17 +16,25 @@ import sys
 
 def iterate_messages(f):
     """Yield (offset, length) for every GRIB2 message, hopping by the length in each indicator section."""
+    f.seek(0, 2)
+    file_size = f.tell()
     offset = 0
     while True:
         f.seek(offset)
         head = f.read(16)
         if len(head) < 16:
+            if offset != file_size:
+                sys.exit(f"error: truncated indicator section at byte {offset}")
             return
         if head[:4] != b"GRIB":
             sys.exit(f"error: no GRIB marker at byte {offset}")
         if head[7] != 2:
             sys.exit(f"error: byte {offset}: GRIB edition {head[7]} is not supported (only edition 2)")
         length = struct.unpack(">Q", head[8:16])[0]
+        if length < 20:
+            sys.exit(f"error: byte {offset}: message length {length} is too small")
+        if length > file_size - offset:
+            sys.exit(f"error: byte {offset}: message length {length} extends past end of file")
         yield offset, length
         offset += length
 
@@ -37,6 +45,8 @@ def main():
     parser.add_argument("output")
     parser.add_argument("--index", type=int, default=1, help="1-based message number (default: 1)")
     args = parser.parse_args()
+    if args.index < 1:
+        parser.error("--index must be 1 or greater")
 
     with open(args.input, "rb") as f:
         for number, (offset, length) in enumerate(iterate_messages(f), start=1):

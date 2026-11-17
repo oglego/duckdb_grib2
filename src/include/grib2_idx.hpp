@@ -22,6 +22,7 @@
 //! (see test/cpp/idx_check.cpp).
 
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <optional>
@@ -92,7 +93,7 @@ inline bool IdxParseDouble(const std::string &text, double &value) {
 	char *end = nullptr;
 	errno = 0;
 	const double parsed = std::strtod(text.c_str(), &end);
-	if (errno != 0 || end != text.c_str() + text.size()) {
+	if (errno != 0 || end != text.c_str() + text.size() || !std::isfinite(parsed)) {
 		return false;
 	}
 	value = parsed;
@@ -269,6 +270,10 @@ inline bool ParseIdx(const std::string &text, int64_t file_size, std::vector<Idx
 			return false;
 		}
 		entries.push_back(entry);
+	}
+	if (entries.empty()) {
+		error = "the inventory contains no message entries";
+		return false;
 	}
 	for (size_t i = 0; i + 1 < entries.size(); i++) {
 		entries[i].byte_length = entries[i + 1].byte_offset - entries[i].byte_offset;

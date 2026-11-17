@@ -102,6 +102,12 @@ static void CheckLines() {
 
 	Check(ParseIdxLine("5:100:d=2026102300:TMP:2 m above ground:1 hour fcst:50% level", e, error), "percentile");
 	Check(e.percentile && *e.percentile == 50.0, "percentile value");
+	Check(ParseIdxLine("5:100:d=2026102300:TMP:2 m above ground:1 hour fcst:nan% level", e, error),
+	      "non-finite percentile line");
+	Check(!e.percentile, "non-finite percentile is ignored");
+	Check(ParseIdxLine("6:200:d=2026102300:TMP:2 m above ground:1 hour fcst:prob >inf", e, error),
+	      "non-finite probability line");
+	Check(!e.threshold_lower && !e.threshold_upper, "non-finite probability threshold is ignored");
 
 	Check(ParseIdxLine("6:200:d=2026102300:VIS:surface:1 hour fcst:prob <304.8:prob fcst 3/7:probability forecast", e,
 	                   error),
@@ -148,6 +154,10 @@ static void CheckLines() {
 	Check(!ParseIdxLine("1:0:d=2026132300:TMP:surface:anl:", e, error), "invalid month");
 
 	std::vector<IdxEntry> entries;
+	Check(!ParseIdx("", 100, entries, error) && error.find("no message entries") != std::string::npos,
+	      "empty inventory is invalid");
+	Check(!ParseIdx("\r\n\n", 100, entries, error) && error.find("no message entries") != std::string::npos,
+	      "blank inventory is invalid");
 	Check(!ParseIdx("1:100:d=2026102300:A:l:anl:\n2:100:d=2026102300:B:l:anl:\n", -1, entries, error) &&
 	          error.find("line 2") != std::string::npos,
 	      "offsets must increase");
