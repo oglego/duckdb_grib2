@@ -230,6 +230,23 @@ inline uint64_t ReadBitsBigEndian(const uint8_t *data, uint64_t position, unsign
 	return window & ((uint64_t(1) << bits) - 1);
 }
 
+//! Number of set bits among the first `count` bits of a big-endian bit stream. The caller has checked that the bits lie
+//! inside the buffer.
+inline uint64_t CountSetBits(const uint8_t *data, uint64_t count) {
+	uint64_t set = 0;
+	for (uint64_t byte = 0; byte < count / 8; byte++) {
+		for (unsigned bits = data[byte]; bits != 0; bits &= bits - 1) {
+			set++;
+		}
+	}
+	if (count % 8 != 0) {
+		for (unsigned bits = data[count / 8] >> (8 - count % 8); bits != 0; bits &= bits - 1) {
+			set++;
+		}
+	}
+	return set;
+}
+
 //! Reject malformed GRIB2 messages before ecCodes sees them. ecCodes trusts the input: bad lengths, absurd group
 //! counts, or bit widths above 64 can abort or segfault the decoder. We do a basic whole-message check: sections must
 //! be contiguous up to the final "7777" marker, and the field must satisfy a few sanity checks that no valid message
@@ -286,11 +303,20 @@ inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const Mess
 		error = "the bitmap is too short for the number of grid points";
 		return false;
 	}
+	// Every set bit is a cell that takes the next coded value, so more set bits than coded values (the number of data
+	// points in section 5) would have the decoder read past the coded values
+	if (section6_length >= 6 && section6[5] == 0 &&
+	    CountSetBits(section6 + 6, summary.grid_points) > summary.data_points) {
+		error = "the bitmap marks more cells as holding data than the " + std::to_string(summary.data_points) +
+		        " values the data representation section declares";
+		return false;
+	}
 	if (summary.data_template != 0 && summary.data_template != 2 && summary.data_template != 3) {
 		return true;
 	}
 	const bool spatial = summary.data_template == 3;
-	const uint64_t required_length = summary.data_template == 0 ? 20 : (spatial ? 49 : 47);
+	// Template 5.0 is 21 octets; the last is the type of the original values, which ecCodes reads
+	const uint64_t required_length = summary.data_template == 0 ? 21 : (spatial ? 49 : 47);
 	if (section5_length < required_length) {
 		error = "the data representation section is shorter than its template requires";
 		return false;

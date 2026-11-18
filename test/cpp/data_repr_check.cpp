@@ -269,6 +269,50 @@ int main() {
 		Check(!Accepted(BuildSimplePacked(base, values, 65, values * 9), error), "5.0 with 65 bits per value accepted");
 		Check(!Accepted(BuildSimplePacked(base, 0xFFFFFFFFu, 64, 1024), error), "5.0 with 4 billion values accepted");
 	}
+	{ // An explicit bitmap may not mark more cells as holding data than section 5 declares values for
+		for (const char *path : {"test/data/simple_bitmap.grib2", "test/data/masked_gu.grib2"}) {
+			const std::vector<uint8_t> valid = ReadFile(path);
+			Check(!valid.empty(), std::string("cannot read ") + path);
+			const size_t section5 = FindSection(valid, 5);
+			const size_t section6 = FindSection(valid, 6);
+			std::string error;
+			Check(Accepted(valid, error), std::string(path) + " is valid: " + error);
+			// The bitmap's set bits and the declared value count agree in the real file
+			uint32_t declared = ReadBigEndian32(&valid[section5 + 5]);
+			uint32_t grid_points = ReadBigEndian32(&valid[FindSection(valid, 3) + 6]);
+			Check(CountSetBits(&valid[section6 + 6], grid_points) == declared,
+			      std::string(path) + ": set bits equal the declared number of values");
+			for (const uint32_t fewer : {declared - 1, declared / 2, uint32_t(0)}) {
+				std::vector<uint8_t> msg = valid;
+				Put32(msg, section5 + 5, fewer);
+				error.clear();
+				Check(!Accepted(msg, error), std::string(path) + ": a bitmap with more set bits than the " +
+				                                 std::to_string(fewer) + " declared values was accepted");
+				Check(error.find("bitmap") != std::string::npos,
+				      std::string(path) + ": unhelpful error for too many bitmap bits: " + error);
+			}
+		}
+		// CountSetBits: whole bytes, a partial last byte, and bits past the count are ignored
+		const uint8_t bits[] = {0xFF, 0xA5, 0xFF};
+		Check(CountSetBits(bits, 0) == 0, "no bits counted");
+		Check(CountSetBits(bits, 8) == 8, "one whole byte");
+		Check(CountSetBits(bits, 16) == 12, "two whole bytes");
+		Check(CountSetBits(bits, 12) == 10, "a partial byte: the first four bits of 0xA5 are 1010");
+		Check(CountSetBits(bits, 9) == 9, "one bit of a partial byte (the leading 1 of 0xA5)");
+	}
+	{ // template 5.0 needs its full 21 octets
+		const std::vector<uint8_t> base = ReadFile("fixtures/nbm_msg.grib2");
+		std::vector<uint8_t> msg = BuildSimplePacked(base, 1000, 8, 1000);
+		const size_t section5 = FindSection(msg, 5);
+		std::string error;
+		Check(Accepted(msg, error), "a 21-octet 5.0 section is accepted: " + error);
+		msg.erase(msg.begin() + section5 + 20); // section 5 is now 20 octets: cut the last one, fix both lengths
+		Put32(msg, section5, 20);
+		for (int b = 0; b < 8; b++) {
+			msg[8 + b] = static_cast<uint8_t>(static_cast<uint64_t>(msg.size()) >> (8 * (7 - b)));
+		}
+		Check(!Accepted(msg, error), "a 20-octet 5.0 section was accepted");
+	}
 	{ // packing templates the screen cannot validate in depth never reach ecCodes
 		const std::vector<uint8_t> valid = ReadFile("fixtures/nbm_msg.grib2");
 		Check(!valid.empty(), "cannot read fixtures/nbm_msg.grib2");

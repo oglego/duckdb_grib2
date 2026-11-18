@@ -272,6 +272,13 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 			throw NotImplementedException(std::string(function) + ": south polar stereographic is not supported yet");
 		}
 		spec.lov = Grib2DoubleKey(h, "orientationOfTheGridInDegrees", function);
+	} else if (!MercatorGrid::SpanIsSupported(spec.ni, spec.dx, spec.radius, spec.lad)) {
+		// The projection measures longitude from the first grid point; a wider grid would look points up in the wrong
+		// column
+		throw NotImplementedException(
+		    std::string(function) + ": a Mercator grid spanning " +
+		    std::to_string(MercatorGrid::SpanDegrees(spec.ni, spec.dx, spec.radius, spec.lad)) +
+		    " degrees of longitude is not supported yet (the limit is 180)");
 	}
 
 	Grib2Grid result;

@@ -345,6 +345,23 @@ private:
 //! reproduces ecCodes' coordinates to about 1e-13 degrees.
 class MercatorGrid final : public ProjectedGrid {
 public:
+	//! Whether every column lies less than half a turn of longitude east of the first grid point. Project() measures
+	//! longitude from that point wrapped into [-180, 180), so a point further east than that lands on the far side of
+	//! the grid and would be looked up in the wrong column (or reported as outside the grid). Real regional Mercator
+	//! grids (NBM Hawaii, Puerto Rico, Guam) span a few degrees; a global one cannot be handled by this class.
+	static bool SpanIsSupported(int64_t ni, double dx_m, double radius_m, double lad_deg) {
+		const double scale = radius_m * std::cos(lad_deg * DEG);
+		if (!std::isfinite(scale) || scale <= 0.0) {
+			return false;
+		}
+		return static_cast<double>(ni - 1) * dx_m / scale < PI;
+	}
+
+	//! Longitude covered by the grid's columns, in degrees, for error messages
+	static double SpanDegrees(int64_t ni, double dx_m, double radius_m, double lad_deg) {
+		return static_cast<double>(ni - 1) * dx_m / (radius_m * std::cos(lad_deg * DEG)) / DEG;
+	}
+
 	MercatorGrid(int64_t ni_p, int64_t nj_p, double la1_deg, double lo1_deg, double lad_deg, double dx_m, double dy_m,
 	             double radius_m)
 	    : ProjectedGrid(ni_p, nj_p, dx_m, dy_m, radius_m), lon0(lo1_deg), scale(radius_m * std::cos(lad_deg * DEG)) {

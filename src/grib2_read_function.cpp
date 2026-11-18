@@ -30,6 +30,8 @@
 #include <cmath>
 #include <deque>
 #include <future>
+#include <memory>
+#include <new>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -307,6 +309,11 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	//! std::launch::async when background threads are allowed (grib2_io_threads > 1); deferred (the default setting)
 	//! runs each fetch on the scanning thread when it is needed
 	std::launch fetch_policy = std::launch::deferred;
+	//! The most recently opened file, reused while consecutive messages come from it. Only used when fetches run on the
+	//! scanning thread (deferred): messages are in file order, so one open handle is enough, and it saves a request per
+	//! message on remote files (httpfs asks for the size every time a file is opened).
+	std::string reader_path;
+	std::shared_ptr<const FileReader> reader;
 	//! How many messages are fetched ahead of the one being decoded: grib2_io_threads, capped at
 	//! GRIB2_MAX_PREFETCH_MESSAGES. Always at least one.
 	idx_t prefetch_depth = 1;
@@ -390,13 +397,25 @@ void FillPrefetch(Grib2ReadGlobalState &state) {
 		FileSystem *fs = state.fs;
 		PendingFetch fetch;
 		fetch.length = row.byte_length;
-		fetch.bytes = std::async(state.fetch_policy,
-		                         [fs, path = row.file_path, offset = row.byte_offset, length = row.byte_length]() {
-			                         // Each fetch opens its own handle: concurrent reads on one remote handle are
-			                         // not something to rely on
-			                         const FileReader reader(*fs, path);
-			                         return reader.ReadAt(offset, length);
-		                         });
+		std::shared_ptr<const FileReader> shared;
+		if (state.fetch_policy == std::launch::deferred) {
+			// Every fetch runs on this thread, so they can share one handle
+			if (!state.reader || state.reader_path != row.file_path) {
+				state.reader = std::make_shared<const FileReader>(*fs, row.file_path);
+				state.reader_path = row.file_path;
+			}
+			shared = state.reader;
+		}
+		fetch.bytes = std::async(state.fetch_policy, [fs, shared, path = row.file_path, offset = row.byte_offset,
+		                                              length = row.byte_length]() {
+			if (shared) {
+				return shared->ReadAt(offset, length);
+			}
+			// Background threads each open their own handle: concurrent reads on one remote handle are not something
+			// to rely on
+			const FileReader reader(*fs, path);
+			return reader.ReadAt(offset, length);
+		});
 		state.pending_bytes += row.byte_length;
 		state.pending.push_back(std::move(fetch));
 	}
@@ -420,6 +439,11 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 		std::string indicator_error;
 		if (ParseIndicator(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size(), indicator, needed,
 		                   indicator_error) != SectionParseResult::OK) {
+			if (indicator_error.empty()) {
+				// A buffer too short for an indicator section is reported as "need more", with no text
+				indicator_error =
+				    "the message is " + std::to_string(bytes.size()) + " bytes, too short for a GRIB indicator section";
+			}
 			throw InvalidInputException(indicator_error + " (does the .idx belong to this file?)");
 		}
 		if (static_cast<int64_t>(indicator.total_length) != row.byte_length) {
@@ -468,6 +492,11 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 		}
 		state.cell_position = 0;
 		state.loaded = true;
+	} catch (const std::bad_alloc &) {
+		// Not an input problem: a large message or grid did not fit in memory
+		throw Exception(ExceptionType::OUT_OF_MEMORY, row.file_path + ": message " +
+		                                                  std::to_string(row.message_number) +
+		                                                  ": out of memory while reading or decoding the message");
 	} catch (std::exception &error) {
 		// what() of a DuckDB exception is JSON; the plain message reads better
 		// Keep the original kind of error (IO, out of memory, interrupt, not implemented): everything arriving here

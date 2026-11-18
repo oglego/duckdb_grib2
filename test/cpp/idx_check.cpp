@@ -152,6 +152,16 @@ static void CheckLines() {
 	      "n.m message number");
 	Check(!ParseIdxLine("1:0:d=2026102300:TMP", e, error), "too few fields");
 	Check(!ParseIdxLine("1:0:d=2026132300:TMP:surface:anl:", e, error), "invalid month");
+	Check(!ParseIdxLine("1:0:d=2026023100:TMP:surface:anl:", e, error), "31 February");
+	Check(!ParseIdxLine("1:0:d=2027022900:TMP:surface:anl:", e, error), "29 February in a common year");
+	Check(ParseIdxLine("1:0:d=2028022900:TMP:surface:anl:", e, error), "29 February in a leap year");
+	Check(!ParseIdxLine("1:0:d=2026043100:TMP:surface:anl:", e, error), "31 April");
+	Check(!ParseIdxLine("1:0:d=-123023100:TMP:surface:anl:", e, error), "a negative year");
+	Check(!ParseIdxLine("1:0:d=+026102300:TMP:surface:anl:", e, error), "a plus sign in the date");
+	Check(!ParseIdxLine("1:0:d=2026 02300:TMP:surface:anl:", e, error), "a space in the date");
+	Check(!ParseIdxLine(" 5:0:d=2026102300:TMP:surface:anl:", e, error), "white space before the message number");
+	Check(!ParseIdxLine("+5:0:d=2026102300:TMP:surface:anl:", e, error), "a plus sign before the message number");
+	Check(!ParseIdxLine("5: 10:d=2026102300:TMP:surface:anl:", e, error), "white space before the byte offset");
 
 	std::vector<IdxEntry> entries;
 	Check(!ParseIdx("", 100, entries, error) && error.find("no message entries") != std::string::npos,

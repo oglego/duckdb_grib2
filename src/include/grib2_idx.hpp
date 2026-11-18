@@ -73,7 +73,9 @@ struct IdxEntry {
 };
 
 inline bool IdxParseInt(const std::string &text, int64_t &value) {
-	if (text.empty()) {
+	// strtoll also skips leading white space and accepts a "+"; an inventory field is a plain (possibly negative)
+	// number
+	if (text.empty() || !((text[0] >= '0' && text[0] <= '9') || text[0] == '-')) {
 		return false;
 	}
 	char *end = nullptr;
@@ -84,6 +86,25 @@ inline bool IdxParseInt(const std::string &text, int64_t &value) {
 	}
 	value = static_cast<int64_t>(parsed);
 	return true;
+}
+
+//! A field made only of decimal digits, as the parts of the reference time are
+inline bool IdxParseDigits(const std::string &text, int64_t &value) {
+	if (text.empty() || text.size() > 18) {
+		return false;
+	}
+	for (const char c : text) {
+		if (c < '0' || c > '9') {
+			return false;
+		}
+	}
+	return IdxParseInt(text, value);
+}
+
+inline int IdxDaysInMonth(int64_t year, int64_t month) {
+	static const int days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+	const bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+	return days[month - 1] + (month == 2 && leap ? 1 : 0);
 }
 
 inline bool IdxParseDouble(const std::string &text, double &value) {
@@ -216,10 +237,10 @@ inline bool ParseIdxLine(const std::string &raw_line, IdxEntry &out, std::string
 		return false;
 	}
 	int64_t year = 0, month = 0, day = 0, hour = 0, minute = 0;
-	if (!IdxParseInt(date.substr(2, 4), year) || !IdxParseInt(date.substr(6, 2), month) ||
-	    !IdxParseInt(date.substr(8, 2), day) || (date.size() >= 12 && !IdxParseInt(date.substr(10, 2), hour)) ||
-	    (date.size() >= 14 && !IdxParseInt(date.substr(12, 2), minute)) || month < 1 || month > 12 || day < 1 ||
-	    day > 31 || hour > 23 || minute > 59) {
+	if (!IdxParseDigits(date.substr(2, 4), year) || !IdxParseDigits(date.substr(6, 2), month) ||
+	    !IdxParseDigits(date.substr(8, 2), day) || (date.size() >= 12 && !IdxParseDigits(date.substr(10, 2), hour)) ||
+	    (date.size() >= 14 && !IdxParseDigits(date.substr(12, 2), minute)) || year < 1 || month < 1 || month > 12 ||
+	    day < 1 || day > IdxDaysInMonth(year, month) || hour > 23 || minute > 59) {
 		error = "invalid reference time '" + date + "'";
 		return false;
 	}

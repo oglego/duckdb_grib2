@@ -171,6 +171,25 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	{ // Mercator measures longitude from the first grid point wrapped into [-180, 180), so grids reaching 180 degrees
+	  // east of it are refused (a point beyond would be looked up in the wrong column)
+		const double radius = 6371229.0;
+		const double lad = 20.0;
+		// NBM Hawaii: a few degrees
+		Check(MercatorGrid::SpanIsSupported(625, 2500.0, radius, lad), "a regional Mercator grid is supported");
+		// 400 columns of 100 km at 20 degrees: about 380 degrees of longitude
+		Check(!MercatorGrid::SpanIsSupported(400, 100000.0, radius, lad), "a grid wider than 360 degrees is refused");
+		Check(!MercatorGrid::SpanIsSupported(200, 100000.0, radius, lad), "a grid wider than 180 degrees is refused");
+		Check(MercatorGrid::SpanIsSupported(188, 100000.0, radius, lad), "a grid just under 180 degrees is supported");
+		Check(MercatorGrid::SpanDegrees(200, 100000.0, radius, lad) > 180.0, "the span in degrees is reported");
+		// The failure the guard prevents: lon 200 is 200 degrees east of the first point, but projects 160 degrees west
+		const MercatorGrid wide(400, 200, -40.0, 0.0, lad, 100000.0, 100000.0, radius);
+		double fi = 0, fj = 0;
+		wide.Forward(0.0, 200.0, fi, fj);
+		Check(fi < 0, "a point 200 degrees east of a Mercator grid's first column wraps to the west (why such grids "
+		              "are refused)");
+	}
+
 	std::printf("regions=%d failures=%d\n", regions, failures);
 	return failures == 0 && regions > 0 ? 0 : 1;
 }
