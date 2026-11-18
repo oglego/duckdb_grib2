@@ -6,7 +6,7 @@ proves the harness (column names, dtypes, tolerances, ordering rules) is self-co
 ``GRIB2_ORACLE_BUG=<name>`` injects a realistic implementation bug; the matching tests must then FAIL, which proves
 they can detect it:
 
-    mirror_odd_rows   use ecCodes' stored value order for odd rows (the trap described in docs/DESIGN.md)
+    mirror_odd_rows   use ecCodes' stored value order for odd rows
     off_by_one_i      report i one cell too far east (and the value of that cell)
     no_lon_wrap       treat 0..360 longitudes as if they were -180..180
     open_bbox_edges   treat bbox edges as exclusive

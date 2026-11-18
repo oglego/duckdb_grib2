@@ -169,7 +169,7 @@ inline bool HeaderSizeAcceptable(size_t needed, std::string &error) {
 //! the size of the data section) and has been decoded successfully on real data (NBM uses 5.2 and 5.3, HRRR uses 5.0
 //! and 5.3). ecCodes trusts its input, so a message with any other template is refused here rather than "left to
 //! ecCodes". Widening this list needs a layout check, corrupt-input tests and a real-data fixture first (see
-//! docs/OPERATIONS.md, "Input caveats").
+//! docs/OPERATIONS.md, "Missing values and input safety").
 static const int SCREENED_PACKING_TEMPLATES[] = {0, 2, 3};
 
 inline bool IsScreenedPackingTemplate(int data_template) {

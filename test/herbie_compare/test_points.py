@@ -55,7 +55,7 @@ def test_random_interior_points(name, grid, rg):
 
 @pytest.mark.parametrize("name", [n for n in GRID_NAMES if n != "co_complex"])
 def test_alternating_row_scan_values_not_mirrored(name, grid, rg):
-    """The trap documented in docs/DESIGN.md: with alternative row scanning, odd rows are stored east-to-west.
+    """With alternative row scanning, odd rows are stored east-to-west.
 
     Picks odd-row cells where the mirrored cell has a *different* value, so reading values in stored order would be
     detected, and checks both row parities are exercised.

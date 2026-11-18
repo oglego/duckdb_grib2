@@ -101,7 +101,8 @@ def test_null_and_missing_paths(rg):
     err = rg.error(f"SELECT * FROM read_grib2({sql_str(DATA_DIR / 'does_not_exist.grib2')}, all_cells := true)")
     assert err is not None
     err = rg.error(f"SELECT * FROM read_grib2({sql_str(FIXTURE_DIR / 'no_such_dir_??.grib2')}, all_cells := true)")
-    assert err is not None or True  # an empty glob may be an error or an empty result; it must not crash
+    if err is None:
+        assert rg.read(str(FIXTURE_DIR / "no_such_dir_??.grib2"), all_cells=True).empty
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -189,7 +190,32 @@ def test_trailing_garbage_after_the_last_message(rg, tmp_path):
     f = tmp_path / "trailing.grib2"
     f.write_bytes(data + b"\x00" * 7)
     err = rg.error(read_grib2_sql(str(f), points=[(13.818, 147.0361)]))
-    assert err is None or err  # either tolerated or rejected, never a crash; rows (if any) must still be right
+    if err is None:
+        expected = rg.read(str(FIXTURE_DIR / "nbm_gu_msg.grib2"), points=[(13.818, 147.0361)])
+        actual = rg.read(str(f), points=[(13.818, 147.0361)])
+        columns = ["message_number", "i", "j", "value"]
+        assert actual[columns].to_dict("records") == expected[columns].to_dict("records")
+
+
+@pytest.mark.parametrize(
+    "lat,lon",
+    [
+        ("91.0", "0.0"),
+        ("-91.0", "0.0"),
+        ("0.0", "361.0"),
+        ("0.0", "-361.0"),
+        ("'nan'::DOUBLE", "0.0"),
+        ("0.0", "'inf'::DOUBLE"),
+    ],
+)
+def test_grib2_point_value_rejects_invalid_coordinates(rg, lat, lon):
+    if rg.is_oracle:
+        pytest.skip("scalar functions are not emulated by the oracle")
+    sql = (
+        f"SELECT grib2_point_value(content, {lat}, {lon}) "
+        f"FROM read_blob({sql_str(FIXTURE_DIR / 'nbm_gu_msg.grib2')})"
+    )
+    _expect_error(rg, sql, "outside the valid range")
 
 
 def test_same_file_repeated_in_one_glob_is_read_per_match(rg, tmp_path):

@@ -17,12 +17,12 @@
 [ecCodes](https://github.com/ecmwf/eccodes) to decode values and can read local files or remote files through DuckDB's
 `httpfs` extension.
 
-> **Scope and limitations (v0.1).** Verified only on NOAA NBM (CONUS, Alaska, Hawaii, Puerto Rico, Guam) and the HRRR
-> CONUS surface file. Supported grids are Lambert conformal, north polar stereographic and Mercator on a spherical
+> **Scope and limitations (v0.1).** Verified on NOAA NBM (CONUS, Alaska, Hawaii, Puerto Rico, Guam) and the HRRR
+> CONUS surface file. Supported grids are Lambert conformal, north polar stereographic, and Mercator on a spherical
 > earth, and supported packing templates are 5.0, 5.2 and 5.3. **Regular latitude/longitude grids, which GFS and many
-> other GRIB2 files use, are not supported yet**, nor are Gaussian grids (ECMWF), ellipsoidal earths, south polar grids
-> JPEG 2000 / CCSDS packing, or messages that hold more than one field. Such files are refused with an error naming the unsupported feature, and
-> `grib2_index` still lists their messages. Details: [supported inputs and operational limits](docs/OPERATIONS.md).
+> other GRIB2 files use, are not supported yet**. Gaussian grids (ECMWF), ellipsoidal earths, south polar grids,
+> JPEG 2000 and CCSDS packing, and messages that hold more than one field are also unsupported. Decoding such messages
+> fails with an error; `grib2_index` can still list their metadata. See [supported data and limits](docs/OPERATIONS.md).
 
 ### Examples
 
@@ -85,7 +85,7 @@ remote-read details.
 
 Verified inputs are NBM forecast-hour-1 core products for CONUS, Alaska, Hawaii, Puerto Rico, and Guam, plus the HRRR
 CONUS surface file. Supported grids and packing templates are limited; unsupported data may be refused with an error.
-See [supported inputs and operational limits](docs/OPERATIONS.md) for the tested scope and limitations.
+See [supported data and limits](docs/OPERATIONS.md) for the tested scope and limitations.
 
 ## Functions and documentation
 
@@ -95,9 +95,7 @@ See [supported inputs and operational limits](docs/OPERATIONS.md) for the tested
 - BLOB helpers: `grib2_eccodes_version`, `grib2_message_info`, and `grib2_point_value`.
 
 - [Building from source](docs/BUILDING.md): dependencies, local builds, and tests.
-- [Design notes](docs/DESIGN.md): implementation details and technical decisions.
-- [ecCodes integration](docs/ECCODES.md): decoder boundary, keys, and API calls.
-- [Supported inputs and operational limits](docs/OPERATIONS.md).
+- [Supported data and limits](docs/OPERATIONS.md): verified formats, runtime settings, and input caveats.
 - [Test data and coverage](test/README.md).
 
 ## License

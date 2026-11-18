@@ -92,6 +92,10 @@ static std::string DescribeGribMessage(const char *data, idx_t size) {
 
 static optional<double> PointValueFromMessage(const char *data, idx_t size, double lat, double lon) {
 	const char *function = "grib2_point_value";
+	if (!std::isfinite(lat) || !std::isfinite(lon) || lat < -90.0 || lat > 90.0 || lon < -360.0 || lon > 360.0) {
+		throw InvalidInputException(
+		    "grib2_point_value: a point is outside the valid range (lat -90 to 90, lon -360 to 360)");
+	}
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
 	codes_handle *h = handle.get();
 

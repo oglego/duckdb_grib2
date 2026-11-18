@@ -140,8 +140,7 @@ std::vector<QueryPoint> ParsePoints(const Value &value) {
 		if (!lat || !lon) {
 			throw InvalidInputException(usage);
 		}
-		if (!std::isfinite(*lat) || !std::isfinite(*lon) || LatitudeOutOfRange(*lat) ||
-		    LongitudeOutOfRange(*lon)) {
+		if (!std::isfinite(*lat) || !std::isfinite(*lon) || LatitudeOutOfRange(*lat) || LongitudeOutOfRange(*lon)) {
 			throw InvalidInputException(
 			    "read_grib2: a point is outside the valid range (lat -90 to 90, lon -360 to 360)");
 		}
