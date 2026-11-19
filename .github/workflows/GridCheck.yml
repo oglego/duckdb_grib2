@@ -117,17 +117,33 @@ jobs:
   herbie-comparison:
     name: DuckDB vs Herbie comparison suite
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A cold build of DuckDB is slow on a hosted runner; the ccache step makes later runs much faster
+    timeout-minutes: 20
+    env:
+      # Without this the Makefile builds with Unix Makefiles and no parallelism. The official build pipeline uses it too.
+      GEN: ninja
     steps:
       - uses: actions/checkout@v4
-      - name: Install ecCodes
-        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev
+        with:
+          # duckdb/ and extension-ci-tools/ are submodules, and the Makefile includes a file from the latter
+          submodules: recursive
+      - name: Install ecCodes and Ninja
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev ninja-build
+      - name: Set up ccache
+        # DuckDB's CMake uses ccache when it is on the PATH
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: herbie-comparison
+          max-size: 3GB
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - name: Build DuckDB and the extension
         run: make
+      - name: Check the build produced what the suite needs
+        # The suite skips every test when it cannot find the extension, so a missing file would look like a pass
+        run: ls -l build/release/duckdb build/release/extension/grib2/grib2.duckdb_extension
       - name: Install comparison dependencies
         working-directory: test/herbie_compare
         run: uv sync --frozen
