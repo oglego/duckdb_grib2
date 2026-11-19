@@ -3,6 +3,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/file_system.hpp"
 
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -60,7 +61,7 @@ class FileReader {
 public:
 	FileReader(FileSystem &fs, const std::string &path_p)
 	    : path(path_p), handle(fs.OpenFile(path_p, FileFlags::FILE_FLAGS_READ)),
-	      size(static_cast<int64_t>(handle->GetFileSize())) {
+	      size(SafeFileSize(path_p, handle->GetFileSize())) {
 	}
 
 	//! Open a file, or return nullptr when it does not exist. One request for a remote file, where checking that it
@@ -92,7 +93,15 @@ public:
 
 private:
 	FileReader(const std::string &path_p, unique_ptr<FileHandle> handle_p)
-	    : path(path_p), handle(std::move(handle_p)), size(static_cast<int64_t>(handle->GetFileSize())) {
+	    : path(path_p), handle(std::move(handle_p)), size(SafeFileSize(path_p, handle->GetFileSize())) {
+	}
+
+	static int64_t SafeFileSize(const std::string &path_p, idx_t file_size) {
+		if (file_size > static_cast<idx_t>(std::numeric_limits<int64_t>::max())) {
+			throw IOException(path_p + ": file is too large (" + std::to_string(file_size) + " bytes; the limit is " +
+			                  std::to_string(std::numeric_limits<int64_t>::max()) + ")");
+		}
+		return static_cast<int64_t>(file_size);
 	}
 };
 

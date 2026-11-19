@@ -98,3 +98,24 @@ jobs:
         run: g++ -std=c++17 -O1 -g -Wall -Wextra -I src/include test/cpp/missing_value_check.cpp -o missing_value_check -leccodes
       - name: Run missing-value check
         run: ./missing_value_check
+
+  herbie-comparison:
+    name: DuckDB vs Herbie comparison suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ecCodes
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build DuckDB and the extension
+        run: make
+      - name: Install comparison dependencies
+        working-directory: test/herbie_compare
+        run: uv sync --frozen
+      - name: Run Herbie comparison suite
+        working-directory: test/herbie_compare
+        run: uv run pytest

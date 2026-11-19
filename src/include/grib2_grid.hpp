@@ -246,7 +246,8 @@ private:
 		const double dl = (lon2 - lon1) * DEG;
 		const double a = std::sin((p2 - p1) / 2) * std::sin((p2 - p1) / 2) +
 		                 std::cos(p1) * std::cos(p2) * std::sin(dl / 2) * std::sin(dl / 2);
-		return 2 * (radius / 1000.0) * std::asin(std::sqrt(a));
+		const double clamped_a = std::max(0.0, std::min(1.0, a));
+		return 2 * (radius / 1000.0) * std::asin(std::sqrt(clamped_a));
 	}
 
 	double x1 = 0;

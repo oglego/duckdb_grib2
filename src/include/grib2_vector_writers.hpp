@@ -23,6 +23,10 @@ inline void WriteOptional(VectorWriter<T> &writer, const optional<T> &value) {
 }
 
 inline void WriteString(VectorWriter<string_t> &writer, const std::string &value) {
+	if (value.size() > static_cast<size_t>(string_t::MAX_STRING_SIZE)) {
+		throw OutOfRangeException("Cannot create a string of size: '%d', the maximum supported string size is: '%d'",
+		                          value.size(), string_t::MAX_STRING_SIZE);
+	}
 	writer.WriteValue(string_t(value.c_str(), UnsafeNumericCast<uint32_t>(value.size())));
 }
 

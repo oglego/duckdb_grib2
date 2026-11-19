@@ -145,6 +145,9 @@ struct DecodedValues {
 	}
 	//! The value at a raw index, or nothing for a cell with no data
 	optional<double> At(int64_t raw_index) const {
+		if (raw_index < 0 || static_cast<size_t>(raw_index) >= values.size()) {
+			return optional<double>();
+		}
 		const double value = values[static_cast<size_t>(raw_index)];
 		if (IsMasked(value)) {
 			return optional<double>();
@@ -272,6 +275,10 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 			throw NotImplementedException(std::string(function) + ": south polar stereographic is not supported yet");
 		}
 		spec.lov = Grib2DoubleKey(h, "orientationOfTheGridInDegrees", function);
+		if (!std::isfinite(spec.lov)) {
+			throw InvalidInputException(std::string(function) +
+			                            ": the polar stereographic grid orientation is not valid");
+		}
 	} else if (!MercatorGrid::SpanIsSupported(spec.ni, spec.dx, spec.radius, spec.lad)) {
 		// The projection measures longitude from the first grid point; a wider grid would look points up in the wrong
 		// column
