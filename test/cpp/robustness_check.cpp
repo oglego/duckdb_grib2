@@ -298,7 +298,13 @@ int main() {
 		CHECK(!step_of("-1 hour fcst").has_value());
 		CHECK(!step_of("-9223372036854775808 hour fcst").has_value());
 		CHECK(!step_of("15 min fcst").has_value());
-		CHECK(!step_of("0-1 hour acc fcst").has_value());
+		// Interval fields are valid at the end of the interval, and the same bound keeps valid_time from overflowing
+		CHECK(step_of("0-1 hour acc fcst") == std::optional<int64_t>(1));
+		CHECK(step_of("0-1000000 hour acc fcst") == std::optional<int64_t>(IDX_MAX_STEP_HOURS));
+		CHECK(!step_of("0-1000001 hour acc fcst").has_value());
+		CHECK(!step_of("0-9223372036854775807 hour acc fcst").has_value());
+		CHECK(!step_of("9223372036854775806-9223372036854775807 hour acc fcst").has_value());
+		CHECK(!step_of("0--1 hour acc fcst").has_value());
 		// The arithmetic read_grib2 performs for valid_time, at the largest step and the latest reference time
 		const int64_t latest_reference_us = 253402300799000000LL; // 9999-12-31 23:59:59 UTC
 		int64_t microseconds = 0;

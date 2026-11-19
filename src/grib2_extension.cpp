@@ -57,6 +57,8 @@ inline void Grib2EccodesVersionScalarFun(DataChunk &args, ExpressionState &state
 // ---------------------------------------------------------------------------
 static std::string DescribeGribMessage(const char *data, idx_t size) {
 	const char *function = "grib2_message_info";
+	// The scalar functions run on several DuckDB threads at once
+	const Grib2EccodesGuard ecc_guard;
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
 	const DecodedValues field = DecodeValues(handle.get(), function);
 	bool any_value = false;
@@ -96,6 +98,7 @@ static optional<double> PointValueFromMessage(const char *data, idx_t size, doub
 		throw InvalidInputException(
 		    "grib2_point_value: a point is outside the valid range (lat -90 to 90, lon -360 to 360)");
 	}
+	const Grib2EccodesGuard ecc_guard;
 	CodesHandlePtr handle = OpenGribMessage(function, data, size);
 	codes_handle *h = handle.get();
 

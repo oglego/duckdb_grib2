@@ -10,7 +10,8 @@ the HRRR CONUS surface file `hrrr.t{HH}z.wrfsfcf00.grib2`.
 
 `read_grib2`, `grib2_message_info`, and `grib2_point_value` currently support:
 
-- Lambert conformal, north polar stereographic, and Mercator grids on a spherical earth.
+- Lambert conformal, north polar stereographic, and Mercator grids on a spherical earth. A Mercator grid must span less
+  than 180 degrees of longitude (every regional grid does); a wider one is refused.
 - The usual scan order: rows run west to east and south to north, optionally alternating row direction.
 - Packing templates 5.0 (simple), 5.2 (complex), and 5.3 (complex with spatial differencing).
 - One field per GRIB2 message.
@@ -20,7 +21,8 @@ stereographic grids, JPEG 2000 and CCSDS packing, and multi-field messages are n
 list messages using unsupported grids or packing templates, but decoding them is refused.
 
 The extension accepts NOAA-style wgrib2 `.idx` inventories. Entries such as `n.m`, which represent several fields in one
-message, are not supported. If no sidecar is available, the file is scanned message by message; `search := ...` requires
+message, are not supported. The reference time (`d=`) must be digits forming a real calendar date, and numbers must not
+carry leading spaces or a `+`; an inventory that breaks these rules is refused with the line number. If no sidecar is available, the file is scanned message by message; `search := ...` requires
 an available `.idx` inventory.
 
 ## Runtime settings
@@ -33,6 +35,18 @@ The default is 1; the allowed range is 1–64. Values above 1 overlap file reads
 bytes for `read_grib2` (up to six messages). Decoding remains single-threaded and row order stays deterministic. Parallel
 file access has been exercised with HTTPS and public S3, but not every filesystem extension or DuckDB secret setup.
 Queries that stop early may wait for reads already in flight.
+
+## Concurrency
+
+DuckDB can call the extension from several threads at once: the scalar functions `grib2_message_info` and
+`grib2_point_value` run in parallel inside one query, and separate connections can run `read_grib2` and `grib2_index`
+at the same time. ecCodes is only safe to use that way when it was built with thread support (its `ECCODES_THREADS` or
+`ECCODES_OMP_THREADS` options, both off by default). The vcpkg build of this extension turns one of them on.
+
+The extension asks the linked ecCodes how it was built. If it reports thread support, ecCodes calls run in parallel; if
+it does not, or cannot say (ecCodes older than 2.47 cannot), the extension takes one process-wide lock around each use
+of ecCodes so that only one thread is inside it at a time. Reading files and choosing cells stay outside the lock. This
+matters if you build the extension against a distribution's ecCodes; it costs nothing with the bundled build.
 
 ## Resource limits
 
@@ -49,7 +63,8 @@ Inputs that exceed these limits fail with an error:
 | Indicator-section message length | 2^62 bytes |
 | Forecast step parsed from `.idx` | 0–1,000,000 hours |
 
-A forecast step outside the supported range is left unset, so `valid_time` is NULL. Grid dimensions, spacing, coordinates,
+A forecast step outside the supported range is left unset, so `valid_time` is NULL. For an `a-b hour` interval field
+such as an accumulation, the step is the end of the interval; see [Forecast steps](REFERENCE.md#forecast-steps). Grid dimensions, spacing, coordinates,
 and earth radius are checked before projection math is used.
 
 ## Missing values and input safety

@@ -14,6 +14,7 @@
 #include "grib2_grid.hpp"
 #include "grib2_message.hpp"
 #include "grib2_missing.hpp"
+#include "grib2_threading.hpp"
 
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"

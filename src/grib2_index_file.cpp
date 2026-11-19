@@ -95,6 +95,7 @@ static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const
 	if (!CheckMessageCounts(summary, unused_error) || static_cast<int64_t>(prefix.size()) > MAX_HEADER_BYTES) {
 		return;
 	}
+	const Grib2EccodesGuard ecc_guard;
 	CodesHandlePtr handle(codes_handle_new_from_partial_message_copy(nullptr, prefix.data(), prefix.size()));
 	if (!handle) {
 		return;

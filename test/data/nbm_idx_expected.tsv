@@ -38,24 +38,24 @@
 37	38834338	801522	2026-10-23T00:00:00	DSWRF	surface	1 hour fcst		1	NA	NA	NA
 38	39635860	2157202	2026-10-23T00:00:00	RETOP	cloud top	1 hour fcst		1	NA	NA	NA
 39	41793062	1127540	2026-10-23T00:00:00	ELLINX	400-300 mb	1 hour fcst		1	NA	NA	NA
-40	42920602	471124	2026-10-23T00:00:00	FICEAC	surface	0-1 hour acc fcst		NA	NA	NA	NA
+40	42920602	471124	2026-10-23T00:00:00	FICEAC	surface	0-1 hour acc fcst		1	NA	NA	NA
 41	43391726	190004	2026-10-23T00:00:00	FRZSPR	surface	1 hour fcst		1	NA	NA	NA
 42	43581730	617971	2026-10-23T00:00:00	TURB	surface - 1372 m above ground	1 hour fcst		1	NA	NA	NA
 43	44199701	499456	2026-10-23T00:00:00	WDIR	surface - 610 m above ground	1 hour fcst		1	NA	NA	NA
 44	44699157	524329	2026-10-23T00:00:00	DIST	surface - 610 m above ground	1 hour fcst		1	NA	NA	NA
 45	45223486	522586	2026-10-23T00:00:00	WIND	surface - 610 m above ground	1 hour fcst		1	NA	NA	NA
-46	45746072	1758623	2026-10-23T00:00:00	MAXREF	1000 m above ground	0-1 hour max fcst		NA	NA	NA	NA
+46	45746072	1758623	2026-10-23T00:00:00	MAXREF	1000 m above ground	0-1 hour max fcst		1	NA	NA	NA
 47	47504695	1901073	2026-10-23T00:00:00	MIXHT	entire atmosphere (considered as a single layer)	1 hour fcst		1	NA	NA	NA
 48	49405768	1495316	2026-10-23T00:00:00	CAPE	surface	1 hour fcst	10% level	1	10	NA	NA
 49	50901084	1843633	2026-10-23T00:00:00	CAPE	surface	1 hour fcst	50% level	1	50	NA	NA
 50	52744717	2148074	2026-10-23T00:00:00	CAPE	surface	1 hour fcst	90% level	1	90	NA	NA
-51	54892791	776446	2026-10-23T00:00:00	APCP	surface	0-1 hour acc fcst	prob >0.254:prob fcst 255/255	NA	NA	0.254	NA
+51	54892791	776446	2026-10-23T00:00:00	APCP	surface	0-1 hour acc fcst	prob >0.254:prob fcst 255/255	1	NA	0.254	NA
 52	55669237	589028	2026-10-23T00:00:00	PWTHER	surface - reserved	1 hour fcst		1	NA	NA	NA
 53	56258265	490513	2026-10-23T00:00:00	PTYPE	surface	1 hour fcst	prob >=3 <4:prob fcst 1/1	1	NA	3	4
 54	56748778	2085616	2026-10-23T00:00:00	PTYPE	surface	1 hour fcst	prob >=1 <2:prob fcst 1/1	1	NA	1	2
 55	58834394	472199	2026-10-23T00:00:00	PTYPE	surface	1 hour fcst	prob >=8 <9:prob fcst 1/1	1	NA	8	9
 56	59306593	631560	2026-10-23T00:00:00	PTYPE	surface	1 hour fcst	prob >=5 <7:prob fcst 1/1	1	NA	5	7
-57	59938153	570147	2026-10-23T00:00:00	TSTM	surface	0-1 hour acc fcst	probability forecast	NA	NA	NA	NA
+57	59938153	570147	2026-10-23T00:00:00	TSTM	surface	0-1 hour acc fcst	probability forecast	1	NA	NA	NA
 58	60508300	1072926	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst		1	NA	NA	NA
 59	61581226	1046086	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst	10% level	1	10	NA	NA
 60	62627312	1011033	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst	50% level	1	50	NA	NA
@@ -66,7 +66,7 @@
 65	67268163	496973	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst	prob >50.8:prob fcst 255/255	1	NA	50.8	NA
 66	67765136	468424	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst	prob >63.5:prob fcst 255/255	1	NA	63.5	NA
 67	68233560	668375	2026-10-23T00:00:00	PWAT	entire atmosphere (considered as a single layer)	1 hour fcst	prob >6.35:prob fcst 255/255	1	NA	6.35	NA
-68	68901935	1104145	2026-10-23T00:00:00	APCP	surface	0-1 hour acc fcst		NA	NA	NA	NA
+68	68901935	1104145	2026-10-23T00:00:00	APCP	surface	0-1 hour acc fcst		1	NA	NA	NA
 69	70006080	1587450	2026-10-23T00:00:00	RH	2 m above ground	1 hour fcst		1	NA	NA	NA
 70	71593530	1704036	2026-10-23T00:00:00	TCDC	surface	1 hour fcst		1	NA	NA	NA
 71	73297566	1730819	2026-10-23T00:00:00	TCDC	surface	1 hour fcst	ens std dev	1	NA	NA	NA
@@ -86,30 +86,30 @@
 85	86327050	1078726	2026-10-23T00:00:00	SNOWLR	surface	1 hour fcst	95% level	1	95	NA	NA
 86	87405776	1098302	2026-10-23T00:00:00	SNOWLR	surface	1 hour fcst	99% level	1	99	NA	NA
 87	88504078	904641	2026-10-23T00:00:00	SNOWLR	surface	1 hour fcst		1	NA	NA	NA
-88	89408719	470625	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	1% level	NA	1	NA	NA
-89	89879344	471200	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	5% level	NA	5	NA	NA
-90	90350544	471685	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	10% level	NA	10	NA	NA
-91	90822229	472675	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	20% level	NA	20	NA	NA
-92	91294904	473198	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	25% level	NA	25	NA	NA
-93	91768102	473954	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	30% level	NA	30	NA	NA
-94	92242056	475575	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	40% level	NA	40	NA	NA
-95	92717631	477124	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	50% level	NA	50	NA	NA
-96	93194755	478743	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	60% level	NA	60	NA	NA
-97	93673498	481350	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	70% level	NA	70	NA	NA
-98	94154848	482555	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	75% level	NA	75	NA	NA
-99	94637403	487770	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	80% level	NA	80	NA	NA
-100	95125173	494082	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	90% level	NA	90	NA	NA
-101	95619255	499883	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	95% level	NA	95	NA	NA
-102	96119138	503373	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	99% level	NA	99	NA	NA
-103	96622511	487218	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst		NA	NA	NA	NA
-104	97109729	501428	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.00254:prob fcst 255/255	NA	NA	0.00254	NA
-105	97611157	479884	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0127:prob fcst 255/255	NA	NA	0.0127	NA
-106	98091041	473916	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0254:prob fcst 255/255	NA	NA	0.0254	NA
-107	98564957	471646	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0381:prob fcst 255/255	NA	NA	0.0381	NA
-108	99036603	470447	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0508:prob fcst 255/255	NA	NA	0.0508	NA
-109	99507050	469574	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0635:prob fcst 255/255	NA	NA	0.0635	NA
-110	99976624	469120	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0762:prob fcst 255/255	NA	NA	0.0762	NA
-111	100445744	468621	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.1016:prob fcst 255/255	NA	NA	0.1016	NA
+88	89408719	470625	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	1% level	1	1	NA	NA
+89	89879344	471200	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	5% level	1	5	NA	NA
+90	90350544	471685	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	10% level	1	10	NA	NA
+91	90822229	472675	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	20% level	1	20	NA	NA
+92	91294904	473198	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	25% level	1	25	NA	NA
+93	91768102	473954	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	30% level	1	30	NA	NA
+94	92242056	475575	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	40% level	1	40	NA	NA
+95	92717631	477124	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	50% level	1	50	NA	NA
+96	93194755	478743	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	60% level	1	60	NA	NA
+97	93673498	481350	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	70% level	1	70	NA	NA
+98	94154848	482555	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	75% level	1	75	NA	NA
+99	94637403	487770	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	80% level	1	80	NA	NA
+100	95125173	494082	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	90% level	1	90	NA	NA
+101	95619255	499883	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	95% level	1	95	NA	NA
+102	96119138	503373	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc@(fcst,dt=1 hour),missing=0	99% level	1	99	NA	NA
+103	96622511	487218	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst		1	NA	NA	NA
+104	97109729	501428	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.00254:prob fcst 255/255	1	NA	0.00254	NA
+105	97611157	479884	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0127:prob fcst 255/255	1	NA	0.0127	NA
+106	98091041	473916	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0254:prob fcst 255/255	1	NA	0.0254	NA
+107	98564957	471646	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0381:prob fcst 255/255	1	NA	0.0381	NA
+108	99036603	470447	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0508:prob fcst 255/255	1	NA	0.0508	NA
+109	99507050	469574	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0635:prob fcst 255/255	1	NA	0.0635	NA
+110	99976624	469120	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.0762:prob fcst 255/255	1	NA	0.0762	NA
+111	100445744	468621	2026-10-23T00:00:00	ASNOW	surface	0-1 hour acc fcst	prob >0.1016:prob fcst 255/255	1	NA	0.1016	NA
 112	100914365	381574	2026-10-23T00:00:00	SNOD	surface	1 hour fcst		1	NA	NA	NA
 113	101295939	650427	2026-10-23T00:00:00	SNOD	surface	1 hour fcst	prob >0.00254:prob fcst 255/255	1	NA	0.00254	NA
 114	101946366	524750	2026-10-23T00:00:00	SNOD	surface	1 hour fcst	prob >0.0127:prob fcst 255/255	1	NA	0.0127	NA
@@ -135,7 +135,7 @@
 134	125133436	1962152	2026-10-23T00:00:00	TMP	2 m above ground	1 hour fcst	ens std dev	1	NA	NA	NA
 135	127095588	1244333	2026-10-23T00:00:00	TRWDIR	entire atmosphere (considered as a single layer)	1 hour fcst		1	NA	NA	NA
 136	128339921	1929865	2026-10-23T00:00:00	TRWSPD	entire atmosphere (considered as a single layer)	1 hour fcst		1	NA	NA	NA
-137	130269786	506489	2026-10-23T00:00:00	THUNC	entire atmosphere	1-2 hour missing fcst		NA	NA	NA	NA
+137	130269786	506489	2026-10-23T00:00:00	THUNC	entire atmosphere	1-2 hour missing fcst		2	NA	NA	NA
 138	130776275	3211535	2026-10-23T00:00:00	VIL	entire atmosphere	1 hour fcst		1	NA	NA	NA
 139	133987810	647572	2026-10-23T00:00:00	VIS	surface	1 hour fcst		1	NA	NA	NA
 140	134635382	260125	2026-10-23T00:00:00	VIS	surface	1 hour fcst	prob <1609.34:prob fcst 2/6:probability forecast	1	NA	NA	1609.34

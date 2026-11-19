@@ -220,9 +220,6 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 					throw InvalidInputException("read_grib2: bbox coordinates must be finite");
 				}
 			}
-			if (LongitudeOutOfRange(result->bbox[0]) || LongitudeOutOfRange(result->bbox[2])) {
-				throw InvalidInputException("read_grib2: bbox longitudes must be between -360 and 360");
-			}
 			if (LatitudeOutOfRange(result->bbox[1]) || LatitudeOutOfRange(result->bbox[3]) ||
 			    result->bbox[1] > result->bbox[3]) {
 				throw InvalidInputException(
@@ -451,14 +448,19 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 			                            " bytes but the index says " + std::to_string(row.byte_length) +
 			                            " (does the .idx belong to this file?)");
 		}
-		CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
-		codes_handle *h = handle.get();
+		Grib2Grid grib_grid;
+		{
+			// Only the ecCodes work is inside the guard: not the file read above or the cell selection below
+			const Grib2EccodesGuard ecc_guard;
+			CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
+			codes_handle *h = handle.get();
 
-		Grib2Grid grib_grid = MakeGrid(h, function);
+			grib_grid = MakeGrid(h, function);
+			state.field = DecodeValues(h, function, grib_grid.grid->Ni() * grib_grid.grid->Nj());
+			state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
+		}
 		const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
-		state.field = DecodeValues(h, function, cell_total);
 		state.alternative_rows = grib_grid.spec.alternative_rows;
-		state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
 
 		// Cell selection depends only on the grid, so keep it while messages share one
 		const bool same_grid = state.selection_spec && *state.selection_spec == grib_grid.spec;

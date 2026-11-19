@@ -119,8 +119,8 @@ static void CheckLines() {
 	Check(ParseIdxLine("7:300:d=2026102300:APCP:surface:0-1 hour acc fcst:prob >=1 <2:prob fcst 1/1", e, error),
 	      "probability interval");
 	Check(e.threshold_lower && *e.threshold_lower == 1.0 && e.threshold_upper && *e.threshold_upper == 2.0 &&
-	          !e.step_hours,
-	      "interval bounds, accumulation has no step");
+	          e.step_hours == 1,
+	      "interval bounds, and an accumulation is valid at the end of its interval");
 
 	Check(ParseIdxLine("8:400:d=2026102300:APCP:surface:0-1 hour acc fcst:prob >0.00254:prob fcst 255/255", e, error),
 	      "probability with a decimal threshold");
@@ -139,6 +139,37 @@ static void CheckLines() {
 
 	Check(ParseIdxLine("11:700:d=202610230630:TMP:2 m above ground:anl:", e, error) && e.hour == 6 && e.minute == 30,
 	      "reference time with minutes");
+
+	// Interval fields are valid at the end of the interval
+	const struct {
+		const char *forecast;
+		int64_t step; // -1: no step
+	} intervals[] = {{"0-1 hour acc fcst", 1},
+	                 {"6-12 hour max fcst", 12},
+	                 {"0-6 hour ave fcst", 6},
+	                 {"1-2 hour missing fcst", 2},
+	                 {"0-1 hour acc@(fcst,dt=1 hour),missing=0", 1},
+	                 {"12-12 hour acc fcst", 12},
+	                 {"0-1000000 hour acc fcst", 1000000},
+	                 {"0-1000001 hour acc fcst", -1}, // beyond the supported range
+	                 {"6-3 hour acc fcst", -1},       // backwards
+	                 {"0-1 day acc fcst", -1},        // not hours
+	                 {"0-30 min acc fcst", -1},
+	                 {"0-x hour acc fcst", -1},
+	                 {"-1-2 hour acc fcst", -1},
+	                 {"0-1hour acc fcst", -1},
+	                 {"0- hour acc fcst", -1},
+	                 {"0-1 hours acc fcst", -1},
+	                 {"1 hour fcst", 1}, // plain steps are unchanged
+	                 {"anl", 0}};
+	for (const auto &c : intervals) {
+		IdxEntry entry;
+		entry.forecast = c.forecast;
+		IdxAnalyze(entry);
+		Check(c.step < 0 ? !entry.step_hours.has_value()
+		                 : (entry.step_hours.has_value() && *entry.step_hours == c.step),
+		      std::string("step of '") + c.forecast + "'");
+	}
 
 	// Malformed input is rejected with a message, not parsed into nonsense
 	Check(!ParseIdxLine("1:0:2026102300:TMP:2 m above ground:1 hour fcst:", e, error) &&

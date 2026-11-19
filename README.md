@@ -94,6 +94,8 @@ See [supported data and limits](docs/OPERATIONS.md) for the tested scope and lim
   values at points, within a bounding box, or across a grid.
 - BLOB helpers: `grib2_eccodes_version`, `grib2_message_info`, and `grib2_point_value`.
 
+- [Function and column reference](docs/REFERENCE.md): every output column of `read_grib2` and `grib2_index`, where each
+  value comes from, when it is NULL, and how `valid_time` is derived.
 - [Building from source](docs/BUILDING.md): dependencies, local builds, and tests.
 - [Supported data and limits](docs/OPERATIONS.md): verified formats, runtime settings, and input caveats.
 - [Test data and coverage](test/README.md).

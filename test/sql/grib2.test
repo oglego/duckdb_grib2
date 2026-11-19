@@ -737,10 +737,10 @@ SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [0, 0, 'inf'::DOUBLE,
 ----
 bbox coordinates must be finite
 
-statement error
-SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [361, 0, 365, 5]);
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [660, 0, 570, 30]);
 ----
-bbox longitudes must be between -360 and 360
+37249
 
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', search := 'TMP', all_cells := true);
@@ -860,3 +860,60 @@ statement error
 SELECT * FROM read_grib2('fixtures/nbm_ak_msg.grib2', message := [], all_cells := true);
 ----
 message is an empty list
+
+# An accumulation, maximum or other "a-b hour" field is valid at the end of its interval, so step_hours is b and
+# valid_time is the reference time plus b hours. A step that is not a whole number of hours has neither.
+# (interval_steps.grib2 and its .idx come from test/data/generate_interval_sample.py; the inventory is synthetic.)
+query ITI
+SELECT message_number, forecast, step_hours FROM grib2_index('test/data/interval_steps.grib2') ORDER BY message_number;
+----
+1	0-6 hour acc fcst	6
+2	6-12 hour max fcst	12
+3	1-2 hour missing fcst	2
+4	15 min fcst	NULL
+
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('test/data/interval_steps.grib2', points := [{'lat': 38.5, 'lon': -97.5}]) ORDER BY message_number;
+----
+1	2026-10-23 06:00
+2	2026-10-23 12:00
+3	2026-10-23 02:00
+4	NULL
+
+# The scalar functions run on several threads at once when a query has several pipelines: the branches of a UNION ALL run
+# in parallel. Every row must come out the same as a single call. ecCodes is only thread-safe when it was built that way,
+# and the extension serialises its use of it otherwise.
+statement ok
+SET threads = 8;
+
+query TII
+WITH many AS (
+    SELECT 'hi' AS src, grib2_point_value(content, 22.005, -154.4903) AS v FROM read_blob('fixtures/nbm_hi_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'hi' AS src, grib2_point_value(content, 22.005, -154.4903) AS v FROM read_blob('fixtures/nbm_hi_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'hi' AS src, grib2_point_value(content, 22.005, -154.4903) AS v FROM read_blob('fixtures/nbm_hi_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'hi' AS src, grib2_point_value(content, 22.005, -154.4903) AS v FROM read_blob('fixtures/nbm_hi_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'pr' AS src, grib2_point_value(content, 17.7425, -66.4248) AS v FROM read_blob('fixtures/nbm_pr_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'pr' AS src, grib2_point_value(content, 17.7425, -66.4248) AS v FROM read_blob('fixtures/nbm_pr_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'pr' AS src, grib2_point_value(content, 17.7425, -66.4248) AS v FROM read_blob('fixtures/nbm_pr_msg.grib2'), range(25)
+    UNION ALL
+    SELECT 'pr' AS src, grib2_point_value(content, 17.7425, -66.4248) AS v FROM read_blob('fixtures/nbm_pr_msg.grib2'), range(25)
+),
+single AS (
+    SELECT 'hi' AS src, grib2_point_value(content, 22.005, -154.4903) AS v FROM read_blob('fixtures/nbm_hi_msg.grib2')
+    UNION ALL
+    SELECT 'pr' AS src, grib2_point_value(content, 17.7425, -66.4248) AS v FROM read_blob('fixtures/nbm_pr_msg.grib2')
+)
+SELECT m.src, count(*) AS rows_read, count(*) FILTER (WHERE m.v IS NOT NULL AND m.v IS NOT DISTINCT FROM s.v) AS same_as_single
+FROM many m JOIN single s USING (src) GROUP BY m.src ORDER BY m.src;
+----
+hi	100	100
+pr	100	100
+
+statement ok
+RESET threads;

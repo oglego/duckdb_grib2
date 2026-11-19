@@ -125,7 +125,17 @@ def test_index_percentile_and_threshold_columns_agree_with_herbie_text(nbm_idx_c
             assert idx.loc[k, "percentile"] == pytest.approx(float(pm.group(1))), f"message {k + 1}"
         else:
             assert pd.isna(idx.loc[k, "percentile"]), f"message {k + 1} has no percentile"
-    assert (idx["step_hours"].dropna() == 1).all()
+    # step_hours is the hours from the reference time to the time the field is valid: N for "N hour fcst", 0 for
+    # "anl", and the end of the interval for "a-b hour ..." fields (an accumulation or maximum is valid when its
+    # interval ends, as cfgrib and Herbie treat it). Anything else, such as a sub-hourly step, has none.
+    for k, forecast in enumerate(idx["forecast"]):
+        m = re.fullmatch(r"(\d+) hour fcst", forecast) or re.match(r"\d+-(\d+) hour ", forecast)
+        if m:
+            assert idx.loc[k, "step_hours"] == int(m.group(1)), f"message {k + 1}: step_hours for {forecast!r}"
+        elif forecast == "anl":
+            assert idx.loc[k, "step_hours"] == 0, f"message {k + 1}: step_hours for {forecast!r}"
+        else:
+            assert pd.isna(idx.loc[k, "step_hours"]), f"message {k + 1}: {forecast!r} has no step"
 
 
 def test_index_of_multi_file_matches_herbie_and_header_hopping(multi_case, rg):

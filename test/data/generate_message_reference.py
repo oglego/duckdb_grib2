@@ -49,6 +49,10 @@ def write_nbm_expected():
         sm = re.fullmatch(r"(\d+) hour fcst", fc)
         if sm:
             step = int(sm.group(1))
+        # An interval field ("0-1 hour acc fcst", "1-2 hour missing fcst") is valid at the end of its interval
+        im = re.match(r"(\d+)-(\d+) hour ", fc)
+        if im and int(im.group(1)) <= int(im.group(2)):
+            step = int(im.group(2))
         pct = None
         pm = re.fullmatch(r"([\d.]+)% level", qual)
         if pm:

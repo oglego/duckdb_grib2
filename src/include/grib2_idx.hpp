@@ -52,8 +52,9 @@ struct IdxEntry {
 	//! Raw qualifier text, empty when the line has none
 	std::string qualifier;
 
-	//! Forecast hour when the forecast text is "anl" (0) or "N hour fcst" (0 to IDX_MAX_STEP_HOURS); empty for
-	//! accumulations, maxima, sub-hourly steps and anything else
+	//! Hours from the reference time to the time the field is valid: 0 for "anl", N for "N hour fcst" (up to
+	//! IDX_MAX_STEP_HOURS), and the end of the interval for "a-b hour ..." fields such as accumulations and maxima (b).
+	//! Empty for sub-hourly steps, intervals in other units and anything else
 	std::optional<int64_t> step_hours;
 	//! N for a qualifier of the form "N% level"
 	std::optional<double> percentile;
@@ -121,6 +122,27 @@ inline bool IdxParseDouble(const std::string &text, double &value) {
 	return true;
 }
 
+//! The end of an interval forecast: the 6 of "0-6 hour acc fcst", "0-6 hour max fcst" or "0-6 hour acc@(fcst,dt=1
+//! hour)". Such a field summarises the hours from `a` to `b` after the reference time, and it is valid at the end of
+//! that period (the convention of cfgrib and Herbie). False unless the text starts with "a-b hour " (hours only, a <=
+//! b, b within IDX_MAX_STEP_HOURS); "0-1 day" and sub-hourly intervals are left unset.
+inline bool IdxIntervalEndHours(const std::string &forecast, int64_t &end_hours) {
+	const size_t space = forecast.find(' ');
+	if (space == std::string::npos || forecast.compare(space, 6, " hour ") != 0) {
+		return false;
+	}
+	const std::string range = forecast.substr(0, space);
+	const size_t dash = range.find('-');
+	int64_t start = 0;
+	int64_t end = 0;
+	if (dash == std::string::npos || !IdxParseDigits(range.substr(0, dash), start) ||
+	    !IdxParseDigits(range.substr(dash + 1), end) || start > end || end > IDX_MAX_STEP_HOURS) {
+		return false;
+	}
+	end_hours = end;
+	return true;
+}
+
 //! Derive step_hours, percentile and the probability thresholds from the raw text.
 inline void IdxAnalyze(IdxEntry &entry) {
 	entry.step_hours.reset();
@@ -137,6 +159,8 @@ inline void IdxAnalyze(IdxEntry &entry) {
 	               0 &&
 	           IdxParseInt(entry.forecast.substr(0, entry.forecast.size() - hour_suffix.size()), number) &&
 	           number >= 0 && number <= IDX_MAX_STEP_HOURS) {
+		entry.step_hours = number;
+	} else if (IdxIntervalEndHours(entry.forecast, number)) {
 		entry.step_hours = number;
 	}
 
