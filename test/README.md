@@ -66,3 +66,14 @@ is needed: a race may not show on a small runner. `--unguarded` runs the same wo
 
 These cover the parsers in this repository only. ecCodes itself, which decodes every message, is not fuzzed here; see
 "Untrusted input" in the README.
+
+## Remote reads
+
+`test/remote_read/` runs the built DuckDB CLI with httpfs against `range_server.py`, a small local server with `HEAD`,
+`Range` and a request log, which also stands in for an S3 bucket in path style. It checks that a remote read returns what
+a local read does, that only the selected message is fetched when an `.idx` is present, that a missing `.idx` is handled
+when the server answers 404 or S3's 403 (and that a 401 is still an error), that `grib2_io_threads > 1` gives the same
+rows, and that a truncated or missing remote file is an error. Standard library only; needs `make` and, on first use,
+network access to install httpfs (or `GRIB2_HTTPFS`). It runs in the manual Herbie workflow.
+
+    python3 -m unittest discover -s test/remote_read -v

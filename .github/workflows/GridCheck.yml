@@ -13,6 +13,9 @@
 #               may differ from the version vcpkg builds into the extension.
 #   missing-value: test/cpp/missing_value_check.cpp decodes the missing-value fixtures with ecCodes through
 #               src/include/grib2_missing.hpp and checks which cells are reported as having no data. Uses Ubuntu's ecCodes.
+#   valid-time: test/cpp/valid_time_check.cpp checks the valid time read from the message (src/include/grib2_valid_time.hpp)
+#               against times computed independently in Python, for several time units, interval templates, a leap day
+#               and a year boundary. Uses Ubuntu's ecCodes.
 #   eccodes-threads: test/cpp/eccodes_threads_check.cpp decodes messages from eight threads through the guard in
 #               src/include/grib2_threading.hpp and compares every result with a single-threaded decode. Ubuntu's ecCodes
 #               is not built thread-safe, so this exercises the path that serialises ecCodes.
@@ -101,6 +104,20 @@ jobs:
         run: g++ -std=c++17 -O1 -g -Wall -Wextra -I src/include test/cpp/missing_value_check.cpp -o missing_value_check -leccodes
       - name: Run missing-value check
         run: ./missing_value_check
+
+  valid-time:
+    name: Valid time read from the message
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ecCodes
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev
+      - name: Build valid time check
+        run: >
+          g++ -std=c++17 -O1 -g -Wall -Wextra -fsanitize=address,undefined -fno-sanitize-recover=all
+          -I src/include test/cpp/valid_time_check.cpp -o valid_time_check -leccodes
+      - name: Run valid time check
+        run: ./valid_time_check
 
   eccodes-threads:
     name: Concurrent decode through the ecCodes guard

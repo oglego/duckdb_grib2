@@ -27,7 +27,7 @@ against the `.idx` inventory text).
 | `file_path` | VARCHAR | The file the row came from. |
 | `message_number` | BIGINT | Position of the message in the file, counting from 1. |
 | `reference_time` | TIMESTAMP | The model run time. From the `.idx` (to the minute) when one is used, otherwise from the message. |
-| `valid_time` | TIMESTAMP | `reference_time` plus `step_hours`, see [Forecast steps](#forecast-steps). NULL without an `.idx`, or when the forecast text gives no step. |
+| `valid_time` | TIMESTAMP | When the field is valid: `reference_time` plus `step_hours` when the `.idx` gives a step, otherwise the time ecCodes works out from the message. See [Forecast steps](#forecast-steps). |
 | `variable` | VARCHAR | From the `.idx` line, for example `TMP`. NULL without an `.idx`. |
 | `level` | VARCHAR | From the `.idx` line, for example `2 m above ground`. NULL without an `.idx`. |
 | `forecast` | VARCHAR | From the `.idx` line, for example `1 hour fcst` or `0-6 hour acc fcst`. NULL without an `.idx`. |
@@ -75,22 +75,28 @@ will ever decode is still listed, but its ecCodes columns stay NULL.
 
 ## Forecast steps
 
-`step_hours` comes from the `forecast` text of the `.idx` line, and `valid_time` in `read_grib2` is
-`reference_time + step_hours`.
+`step_hours` comes from the `forecast` text of the `.idx` line. `valid_time` in `read_grib2` is `reference_time + step_hours`
+when the inventory gives a step, and otherwise the valid time ecCodes derives from the message itself (see below).
 
 | `forecast` text | `step_hours` | `valid_time` |
 |---|---:|---|
 | `anl` | 0 | the reference time |
 | `N hour fcst` | N | reference time + N hours |
 | `a-b hour ...` with `a <= b`, such as `0-6 hour acc fcst`, `6-12 hour max fcst` or `0-1 hour acc@(fcst,dt=1 hour),missing=0` | b | reference time + b hours: the end of the interval |
-| `15 min fcst`, `0-1 day acc fcst`, `b < a`, or anything else | NULL | NULL |
-| a step beyond 1,000,000 hours | NULL | NULL |
+| `15 min fcst`, `0-1 day acc fcst`, `b < a`, or anything else | NULL | from the message |
+| a step beyond 1,000,000 hours | NULL | from the message |
 
 An accumulation, maximum or average describes the hours from `a` to `b`, and it is valid when that period ends. This is
 how cfgrib and Herbie treat such fields too. `a` itself is not kept in a column; it is in the `forecast` text.
 
-Without an `.idx` the extension does not know the step, so `valid_time` is NULL. Put an inventory next to the file (or
-compute the time from `reference_time` yourself) when you need it.
+Without an `.idx`, or when the inventory text gives no step, `valid_time` is the time ecCodes derives from the message:
+its forecast time and unit, or the end of the interval for an accumulation, maximum or average. This also handles steps
+the inventory text cannot express, such as `15 min fcst` and `0-1 day acc fcst`. It is exact to the minute (the message
+valid time has no seconds). `step_hours` is still NULL in these cases: it is an inventory column.
+
+The inventory wins when it gives a step, so `valid_time` always agrees with the `step_hours` shown beside it. For files
+from NOAA the two agree, because the inventory is written from the same messages. If the time cannot be worked out
+(a product template or time unit ecCodes does not support), `valid_time` is NULL.
 
 ## Helper functions
 

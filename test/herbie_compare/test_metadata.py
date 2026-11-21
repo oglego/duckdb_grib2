@@ -311,18 +311,19 @@ def test_eccodes_version_is_reported(rg):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# valid_time: reference time + the step in the .idx (NULL without a sidecar)
+# valid_time: reference time + the step in the .idx when it gives one, otherwise the time ecCodes derives from the message
 # ---------------------------------------------------------------------------------------------------------------------
 def _centre(ref):
     return (float(ref.lat[ref.nj // 2, ref.ni // 2]), float(ref.lon[ref.nj // 2, ref.ni // 2]))
 
 
 @pytest.mark.parametrize("name", ["co", "co_complex", "ak", "hi", "pr", "gu"])
-def test_valid_time_is_null_without_a_sidecar(name, grid, rg):
+def test_valid_time_without_a_sidecar_comes_from_the_message(name, grid, rg):
     ref, path = grid(name)
     assert not Path(path + ".idx").exists()
     df = rg.read(path, points=[_centre(ref)])
-    assert len(df) == 1 and df["valid_time"].isna().all()
+    assert len(df) == 1
+    assert pd.Timestamp(df["valid_time"][0]) == ref.valid_time, "valid_time comes from the message's own forecast time"
     assert pd.Timestamp(df["reference_time"][0]) == ref.reference_time, "reference_time comes from the message itself"
 
 

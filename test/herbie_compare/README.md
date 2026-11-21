@@ -77,8 +77,8 @@ If no extension is found, everything except `test_reference_sanity.py` is skippe
 
 ## Limits
 
-* `valid_time` is reference time + the step from the `.idx`, so it is NULL for files without a sidecar. The tests assert
-  NULL there and, when a sidecar gives the step, equality with Herbie's `valid_time`.
+* `valid_time` is reference time + the step from the `.idx` when the inventory gives one, and otherwise the valid time
+  ecCodes derives from the message. The tests assert equality with Herbie's `valid_time` both with and without a sidecar.
 
 * "Inside the grid" is the extension's half-cell footprint rule. The tests assert behaviour only where it is
   unambiguous (within 0.49 spacings of a centre = inside, more than 1 spacing = outside).

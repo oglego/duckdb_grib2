@@ -66,8 +66,25 @@ public:
 
 	//! Open a file, or return nullptr when it does not exist. One request for a remote file, where checking that it
 	//! exists first and then opening it would be two.
+	//! Open a file that may not be there, such as the .idx next to a GRIB file. A missing file gives nullptr.
+	//!
+	//! httpfs reports a missing object as nullptr only for HTTP 404. S3 answers 403 instead of 404 for a key that does
+	//! not exist when the caller may not list the bucket, which is how most private buckets are set up, so a plain
+	//! file with no .idx would fail with an access error. The GRIB file itself has already been opened with the same
+	//! credentials by then, so a 403 on its sidecar is read as "no sidecar". Other failures, 401 included (the
+	//! credentials are wrong), are still reported.
 	static unique_ptr<FileReader> OpenIfExists(FileSystem &fs, const std::string &path) {
-		auto handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_READ | FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS);
+		unique_ptr<FileHandle> handle;
+		try {
+			handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_READ | FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS);
+		} catch (std::exception &error) {
+			const ErrorData details(error);
+			const auto status = details.ExtraInfo().find("status_code");
+			if (status != details.ExtraInfo().end() && status->second == "403") {
+				return nullptr;
+			}
+			throw;
+		}
 		if (!handle) {
 			return nullptr;
 		}

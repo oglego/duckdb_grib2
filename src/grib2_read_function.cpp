@@ -14,6 +14,7 @@
 #include "grib2_index_file.hpp"
 #include "grib2_message.hpp"
 #include "grib2_settings.hpp"
+#include "grib2_valid_time.hpp"
 #include "grib2_vector_writers.hpp"
 
 #include "duckdb.hpp"
@@ -295,6 +296,9 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	std::vector<Grib2IndexRow> messages;
 	//! ecCodes' short name per selected message, filled in as each is loaded
 	std::vector<optional<std::string>> short_names;
+	//! The valid time ecCodes derives from each message (microseconds since the epoch), filled in as each is loaded.
+	//! Used when the .idx gives no step, or there is no .idx.
+	std::vector<optional<int64_t>> message_valid_times;
 
 	idx_t message_position = 0;
 	FileSystem *fs = nullptr;
@@ -380,6 +384,7 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 		}
 	}
 	state->short_names.resize(state->messages.size());
+	state->message_valid_times.resize(state->messages.size());
 	return state;
 }
 
@@ -458,6 +463,7 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 			grib_grid = MakeGrid(h, function);
 			state.field = DecodeValues(h, function, grib_grid.grid->Ni() * grib_grid.grid->Nj());
 			state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
+			state.message_valid_times[state.message_position] = Grib2ValidTimeMicros(h);
 		}
 		const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
 		state.alternative_rows = grib_grid.spec.alternative_rows;
@@ -593,7 +599,12 @@ void Grib2ReadScan(ClientContext &context, TableFunctionInput &data, DataChunk &
 			message_number.WriteValue(message.message_number);
 			WriteOptional(reference_time, message.reference_time);
 			if (message.reference_time && message.step_hours) {
+				// The inventory's step, when it has one (this is what step_hours reports)
 				valid_time.WriteValue(timestamp_t(message.reference_time->value + *message.step_hours * 3600000000LL));
+			} else if (state.message_valid_times[row.message_index]) {
+				// Otherwise the time ecCodes works out from the message: no .idx, or a step the inventory text cannot
+				// give
+				valid_time.WriteValue(timestamp_t(*state.message_valid_times[row.message_index]));
 			} else {
 				valid_time.WriteNull();
 			}

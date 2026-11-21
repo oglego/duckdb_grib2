@@ -59,13 +59,9 @@ def assert_cells_match_reference(df: pd.DataFrame, ref: RefField, context: str =
     if "reference_time" in df:
         assert (pd.to_datetime(df["reference_time"]) == ref.reference_time).all(), f"{context}: reference_time"
     if "valid_time" in df:
-        # valid_time is reference time + the step read from the .idx (documented), so it is NULL without a sidecar.
-        # With one it must equal Herbie's valid_time.
+        # With an .idx the step comes from it, without one from the message; either way it must equal Herbie's
         vt = pd.to_datetime(df["valid_time"])
-        if Path(ref.source + ".idx").exists():
-            assert (vt == ref.valid_time).all(), f"{context}: valid_time {vt.iloc[0]} != Herbie's {ref.valid_time}"
-        else:
-            assert vt.isna().all(), f"{context}: valid_time should be NULL without an .idx sidecar, got {vt.iloc[0]}"
+        assert (vt == ref.valid_time).all(), f"{context}: valid_time {vt.iloc[0]} != Herbie's {ref.valid_time}"
 
 
 def check_points(rg, ref: RefField, pts, *, path=None, context: str = "", **read_kwargs) -> pd.DataFrame:

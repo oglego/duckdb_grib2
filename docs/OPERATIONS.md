@@ -63,9 +63,18 @@ Inputs that exceed these limits fail with an error:
 | Indicator-section message length | 2^62 bytes |
 | Forecast step parsed from `.idx` | 0–1,000,000 hours |
 
-A forecast step outside the supported range is left unset, so `valid_time` is NULL. For an `a-b hour` interval field
+A forecast step outside the supported range is left unset, and `valid_time` then comes from the message itself. For an `a-b hour` interval field
 such as an accumulation, the step is the end of the interval; see [Forecast steps](REFERENCE.md#forecast-steps). Grid dimensions, spacing, coordinates,
 and earth radius are checked before projection math is used.
+
+## Remote files and the `.idx` sidecar
+
+For each file the extension first tries to open `<file>.idx`. A server that answers 404 means there is none. S3 answers
+403 instead of 404 for a key that does not exist when the caller may not list the bucket, which is how most private
+buckets are set up, so a 403 on the sidecar is also read as "no `.idx`": the file is walked message by message and the
+inventory columns are NULL. Any other failure on the sidecar, including 401 (wrong credentials), is reported as an error.
+A sidecar that exists but that you may not read is therefore indistinguishable from a missing one; if the inventory
+columns are unexpectedly NULL on a remote file, check the access policy for the `.idx` object.
 
 ## Missing values and input safety
 

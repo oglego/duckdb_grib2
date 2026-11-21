@@ -68,7 +68,7 @@ class OracleClient:
                 "file_path": ref.source,
                 "message_number": ref.message_number,
                 "reference_time": ref.reference_time,
-                "valid_time": ref.valid_time if Path(ref.source + ".idx").exists() else pd.NaT,
+                "valid_time": ref.valid_time,
                 "lat": ref.lat[jj, ii],
                 "lon": ref.lon[jj, ii],
                 "i": ii,

@@ -81,6 +81,9 @@ jobs:
         run: ls -l build/release/duckdb build/release/extension/grib2/grib2.duckdb_extension
       - name: Run the SQL logic tests
         run: make test
+      - name: Run the remote read tests
+        # HTTP and S3 (path style) against a local server; httpfs is installed from the DuckDB extension repository
+        run: python3 -m unittest discover -s test/remote_read -v
       - name: Install comparison dependencies
         working-directory: test/herbie_compare
         run: uv sync --frozen
