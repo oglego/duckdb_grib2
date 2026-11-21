@@ -11,7 +11,7 @@ Catalog Error: Scalar Function with name grib2_eccodes_version does not exist!
 # Require statement will ensure this test is run with this extension loaded
 require grib2
 
-# Confirm ecCodes is linked and callable (returns e.g. 2.38.0)
+# Confirm ecCodes is linked and callable (returns e.g. 2.47.0)
 query I
 SELECT regexp_matches(grib2_eccodes_version(), '^\d+\.\d+\.\d+$');
 ----
@@ -37,6 +37,16 @@ grib2_index	path,idx,details
 grib2_message_info	blob
 grib2_point_value	blob,lat,lon
 read_grib2	path,message,search,points,bbox,all_cells
+
+# Parameter types stay aligned with the parameter names
+query TT
+SELECT function_name, array_to_string(parameter_types, ',')
+FROM duckdb_functions()
+WHERE function_name IN ('grib2_index', 'read_grib2')
+ORDER BY function_name;
+----
+grib2_index	VARCHAR,BOOLEAN,BOOLEAN
+read_grib2	VARCHAR,ANY,VARCHAR,ANY,ANY,BOOLEAN
 
 # Decode spike: decode one GRIB2 message (complex packing with spatial differencing)
 # from an in-memory blob. This confirms ecCodes definitions and the packing codec work.
@@ -99,7 +109,7 @@ SELECT grib2_point_value(content, 10.0, -100.0) IS NULL FROM read_blob('fixtures
 ----
 true
 
-# Grids other than Lambert are rejected clearly for now
+# Regular latitude/longitude grids are rejected clearly for now
 statement error
 SELECT grib2_point_value(content, 0.0, 0.0) FROM read_blob('test/data/sample.grib2');
 ----
@@ -262,6 +272,20 @@ statement error
 SELECT * FROM grib2_index('test/data/stale.grib2');
 ----
 belong to this file
+
+# The sidecar is verified as messages are read, so a wrong entry after message 1 is still caught.
+query II
+SELECT message_number, byte_offset FROM grib2_index('test/data/stale_after_first.grib2');
+----
+1	0
+2	35188
+3	63046
+4	163091
+
+statement error
+SELECT * FROM read_grib2('test/data/stale_after_first.grib2', message := 3, points := [{'lat': 17.7425, 'lon': -66.4248}]);
+----
+does the .idx belong
 
 query I
 SELECT count(*) FROM grib2_index('test/data/stale.grib2', idx := false);
@@ -679,6 +703,17 @@ SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [-180, -90,
 ----
 37249
 
+# A bbox covers the expected cells on the CONUS Lambert grid and the Alaska polar-stereographic grid.
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-125, 20, -60, 55]);
+----
+3232563
+
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_ak_msg.grib2', bbox := [-170, 50, -140, 72]);
+----
+448506
+
 # A message whose headers (sections 0 to 5) are larger than the reader will fetch, here a 1.1 MB local-use section
 # (test/data/generate_huge_header_sample.py), is refused before anything that large is read
 statement error
@@ -701,6 +736,67 @@ statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2');
 ----
 needs one of points, bbox or all_cells
+
+# Truncated GRIB2 files are errors at SQL level, even without a sidecar.
+statement error
+SELECT * FROM grib2_index('test/data/truncated.grib2');
+----
+truncated
+
+statement error
+SELECT * FROM read_grib2('test/data/truncated.grib2', all_cells := true);
+----
+truncated
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', points := []);
+----
+points is empty
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.21}]);
+----
+points must be a list
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lon': -93.29}]);
+----
+points must be a list
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', message := 0, all_cells := true);
+----
+message numbers start at 1
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', message := -3, all_cells := true);
+----
+message numbers start at 1
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', message := 1.5, all_cells := true);
+----
+message must be a message number
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-125, -91, -60, 55]);
+----
+bbox latitudes must satisfy
+
+statement error
+SELECT * FROM grib2_index('fixtures/nbm_msg.grib2', idx := NULL);
+----
+cannot be NULL
+
+statement error
+SET grib2_io_threads = NULL;
+----
+grib2_io_threads cannot be NULL
+
+statement error
+SELECT grib2_point_value(content, 91.0, 0.0) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+a point is outside the valid range
 
 statement error
 SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', all_cells := true, bbox := [0, 0, 1, 1]);
@@ -772,6 +868,17 @@ SELECT message_number FROM read_grib2('test/data/multi.grib2', search := ':APTMP
 
 query I
 SELECT count(*) FROM read_grib2('test/data/multi.grib2', search := ':PTMP:', points := [{'lat': 17.7425, 'lon': -66.4248}, {'lat': 22.005, 'lon': -154.4903}]);
+----
+0
+
+# Search and message filters that match no inventory entry return no rows.
+query I
+SELECT count(*) FROM read_grib2('test/data/multi.grib2', search := 'NO_SUCH_VARIABLE', points := [{'lat': 17.7425, 'lon': -66.4248}]);
+----
+0
+
+query I
+SELECT count(*) FROM read_grib2('test/data/multi.grib2', message := 999, points := [{'lat': 17.7425, 'lon': -66.4248}]);
 ----
 0
 
@@ -919,6 +1026,22 @@ pr	100	100
 
 statement ok
 RESET threads;
+
+# Separate DuckDB connections can read and index the same extension data concurrently.
+query I con1
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}]);
+----
+1
+
+query I con2
+SELECT count(*) FROM grib2_index('fixtures/nbm_ak_msg.grib2');
+----
+1
+
+query I con1
+SELECT round(grib2_point_value(content, 37.2090, -93.2923), 1) FROM read_blob('fixtures/nbm_msg.grib2');
+----
+291.5
 
 # A bitmap indicator of 254 ("reuse the previous bitmap", test/data/generate_bad_bitmap_indicator_sample.py) has nothing to
 # refer to in a one-field message, and ecCodes would decode it as if it had no bitmap: it is refused, not decoded

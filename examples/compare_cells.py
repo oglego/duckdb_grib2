@@ -8,6 +8,8 @@ Reads ONE HRRR cycle both ways and compares which grid cells each method keeps:
 Then it prints how many wide-table columns each choice would give, and which one reaches your target.
 """
 from datetime import datetime
+from pathlib import Path
+import os
 
 import numpy as np
 
@@ -16,7 +18,11 @@ CYCLE = datetime(2026, 11, 10, 0)  # any HRRR cycle that exists
 TARGET_COLUMNS = 881  # the column count you expect, including the timestamp
 bbox = [-93.4536, 37.0783, -93.1019, 37.2928]  # lon_min, lat_min, lon_max, lat_max
 search = r":(?:TMP:2 m above ground|DPT:2 m above ground|UGRD:10 m above ground|VGRD:10 m above ground|PRES:surface|GUST:surface|SNOD:surface|LAI:surface|VEG:surface|VGTYP:surface):"
-EXTENSION = "../build/release/extension/grib2/grib2.duckdb_extension"
+REPO = Path(__file__).resolve().parents[1]
+EXTENSION = Path(os.environ.get(
+    "GRIB2_EXTENSION",
+    REPO / "build/release/extension/grib2/grib2.duckdb_extension",
+))
 HERBIE_VARIABLES = 10  # t2m, d2m, u10, v10, sp, gust, sde, lai, veg, vgtyp
 DUCKDB_VARIABLES = 11  # the same ten plus the derived wind speed (si10)
 # ----------------------------------------------------------------------------------------------------------------------
@@ -111,7 +117,8 @@ def main():
 
     con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
     con.execute("INSTALL httpfs; LOAD httpfs; SET s3_region = 'us-east-1';")
-    con.execute(f'LOAD "{EXTENSION}"')
+    extension = str(EXTENSION.resolve()).replace("'", "''")
+    con.execute(f"LOAD '{extension}'")
     rows = con.execute(f"""
         SELECT DISTINCT lat, lon FROM read_grib2(
           's3://noaa-hrrr-bdp-pds/hrrr.{CYCLE:%Y%m%d}/conus/hrrr.t{CYCLE:%H}z.wrfsfcf00.grib2',

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Download real HRRR messages as test fixtures for duckdb_grib2, by byte range, and check each one.
 #
-# What it fetches (all from hrrr.20260602 / t00z / f00, CONUS surface file):
-#   1. msg 90  CSNOW  5.0  188 B     constant field (0 bits per value): edge case for simple packing
-#   2. msg 166 ICEC   5.3  257 B     constant field: edge case for spatial differencing
-#   3. msg 70  SNOD   5.3  22,083 B  real data: complex packing with spatial differencing
-#   4. a 5.0 message with real data, found by asking the extension (prefers message 77, the one that first failed
-#      for you, when it is a reasonable size). Real 5.0 data is big: 1.9M cells at even 1 bit is ~240 KB.
+# What it fetches:
+#   1. a CSNOW simple-packing constant field
+#   2. an ICEC spatial-differencing constant field
+#   3. an SNOD spatial-differencing real-data field
+#   4. a simple-packing message with real data, when one is small enough
 #
 # Usage, from anywhere inside the repo:
 #   bash fetch_hrrr_fixtures.sh
@@ -14,6 +13,8 @@
 # Optional environment:
 #   DUCKDB=path/to/duckdb      the shell with the extension (default: searches build/{release,reldebug,debug}, then PATH)
 #   GRIB2_EXT=path/to/grib2.duckdb_extension   only if the shell does not have the extension built in
+#   DATE=20260602              HRRR date
+#   CYCLE=00                   HRRR hourly cycle
 #   MAX_REAL_BYTES=1500000     skip the 5.0 real-data fixture if the chosen message is bigger than this
 #
 # It stops at the first problem. Nothing is committed for you.
@@ -27,14 +28,13 @@ if [ ! -d fixtures ] || [ ! -f CMakeLists.txt ]; then
   exit 1
 fi
 
-DATE=20260602
-CYCLE=00
+DATE="${DATE:-20260602}"
+CYCLE="${CYCLE:-00}"
 FILE="hrrr.t${CYCLE}z.wrfsfcf00.grib2"
 HTTPS_URL="https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${DATE}/conus/${FILE}"
 S3_URL="s3://noaa-hrrr-bdp-pds/hrrr.${DATE}/conus/${FILE}"
 MAX_REAL_BYTES="${MAX_REAL_BYTES:-1500000}"
 OUT_DIR="fixtures"
-PROVENANCE="${OUT_DIR}/HRRR_PROVENANCE.txt"
 
 # --- Find a DuckDB shell that has the grib2 extension -------------------------------------------------------------
 # Tries $DUCKDB, then the usual build outputs under the repo, then `duckdb` on the PATH.
@@ -120,9 +120,29 @@ q "SELECT message_number, variable, level, packing_template, byte_offset, byte_l
 mkdir -p "$OUT_DIR"
 echo
 echo "== Downloading"
-grab 52114409  188   "${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2"
-grab 138576038 257   "${OUT_DIR}/hrrr_msg166_icec_spatial.grib2"
-grab 36517782  22083 "${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
+
+download_indexed() {
+  local variable="$1" packing="$2" outfile="$3"
+  local row offset length msg
+  row="$(q "SELECT message_number, byte_offset, byte_length
+            FROM grib2_index('${S3_URL}', details := true)
+            WHERE variable = '${variable}' AND packing_template = ${packing}
+            ORDER BY byte_length DESC
+            LIMIT 1")"
+  if [ -z "$row" ]; then
+    echo "error: could not find ${variable} packing template ${packing}" >&2
+    exit 1
+  fi
+  IFS='|' read -r msg offset length <<EOF
+$row
+EOF
+  echo "selected ${variable}: msg ${msg}, offset ${offset}, length ${length}"
+  grab "$offset" "$length" "$outfile"
+}
+
+download_indexed CSNOW 0 "${OUT_DIR}/hrrr_csnow_simple_const.grib2"
+download_indexed ICEC 3 "${OUT_DIR}/hrrr_icec_spatial.grib2"
+download_indexed SNOD 3 "${OUT_DIR}/hrrr_snod_spatial.grib2"
 
 REAL_FILE=""
 if [ -n "$REAL_ROW" ]; then
@@ -132,12 +152,12 @@ EOF
   REAL_FILE="${OUT_DIR}/hrrr_msg${R_MSG}_$(echo "$R_VAR" | tr 'A-Z' 'a-z')_simple.grib2"
   grab "$R_OFFSET" "$R_LENGTH" "$REAL_FILE"
 else
-  echo "note: no 5.0 message between 1000 B and ${MAX_REAL_BYTES} B; raise MAX_REAL_BYTES or tell me and we will pick another way"
+  echo "note: no 5.0 message between 1000 B and ${MAX_REAL_BYTES} B; raise MAX_REAL_BYTES to try again"
 fi
 
 echo
 echo "== Checking each file with the extension"
-FILES="${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_msg166_icec_spatial.grib2 ${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
+FILES="${OUT_DIR}/hrrr_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_icec_spatial.grib2 ${OUT_DIR}/hrrr_snod_spatial.grib2"
 [ -n "$REAL_FILE" ] && FILES="$FILES $REAL_FILE"
 for f in $FILES; do
   echo "--- $f"
@@ -148,23 +168,5 @@ for f in $FILES; do
 done
 
 echo
-echo "== Writing provenance to ${PROVENANCE}"
-{
-  echo "HRRR fixtures, fetched $(date -u +%Y-%m-%d) by byte range from:"
-  echo "  ${HTTPS_URL}"
-  echo "(run ${DATE} ${CYCLE}z, forecast hour 0, CONUS surface file; offsets and lengths are from grib2_index)"
-  echo
-  echo "  hrrr_msg90_csnow_simple_const.grib2    msg 90   CSNOW surface        5.0  offset 52114409   length 188"
-  echo "  hrrr_msg166_icec_spatial.grib2   msg 166  ICEC  surface        5.3  offset 138576038  length 257"
-  echo "  hrrr_msg70_snod_spatial.grib2          msg 70   SNOD  surface        5.3  offset 36517782   length 22083"
-  if [ -n "$REAL_FILE" ]; then
-    echo "  $(basename "$REAL_FILE")   msg ${R_MSG}  ${R_VAR} ${R_LEVEL}  5.0  offset ${R_OFFSET}  length ${R_LENGTH}"
-  fi
-} > "$PROVENANCE"
-cat "$PROVENANCE"
-
-echo
-echo "== Done. Next:"
-echo "   git add ${OUT_DIR}/hrrr_*.grib2 ${PROVENANCE} && git commit -m 'test: add real HRRR fixtures' && git push"
-echo "   then tell me, and I will reclone and write the SQL tests and the ecCodes oracle values."
+echo "== Done"
 ls -l ${OUT_DIR}/hrrr_*.grib2

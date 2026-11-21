@@ -648,7 +648,8 @@ void RegisterGrib2ReadFunction(ExtensionLoader &loader) {
 	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
 
 	FunctionDescription description;
-	description.parameter_types = {LogicalType::VARCHAR};
+	description.parameter_types = {LogicalType::VARCHAR, LogicalType::ANY, LogicalType::VARCHAR,
+	                               LogicalType::ANY,     LogicalType::ANY, LogicalType::BOOLEAN};
 	description.parameter_names = {"path", "message", "search", "points", "bbox", "all_cells"};
 	description.description = "Decodes GRIB2 messages into one row per selected cell, at the nearest grid cell to each "
 	                          "point, inside a bounding box, or across the whole grid, with cells masked by a bitmap "

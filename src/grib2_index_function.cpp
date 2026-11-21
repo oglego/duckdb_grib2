@@ -219,7 +219,7 @@ void RegisterGrib2IndexFunction(ExtensionLoader &loader) {
 	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
 
 	FunctionDescription description;
-	description.parameter_types = {LogicalType::VARCHAR};
+	description.parameter_types = {LogicalType::VARCHAR, LogicalType::BOOLEAN, LogicalType::BOOLEAN};
 	description.parameter_names = {"path", "idx", "details"};
 	description.description = "Lists the messages in one or more GRIB2 files, one row per message, with byte location, "
 	                          "inventory text and grid and packing metadata.";

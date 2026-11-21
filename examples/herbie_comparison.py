@@ -1,4 +1,6 @@
 from datetime import date, datetime, timedelta
+import argparse
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import duckdb
@@ -7,8 +9,15 @@ import pandas as pd
 import xarray as xr
 from herbie import Herbie
 
-start = date.fromisoformat(input("Start date (YYYY-MM-DD): "))
-end = date.fromisoformat(input("End date (YYYY-MM-DD): "))
+parser = argparse.ArgumentParser()
+parser.add_argument("--start", default="2026-11-10", help="Start date (YYYY-MM-DD)")
+parser.add_argument("--end", default="2026-11-10", help="End date (YYYY-MM-DD)")
+parser.add_argument("--extension", type=Path, default=Path(__file__).resolve().parents[1] /
+                    "build/release/extension/grib2/grib2.duckdb_extension")
+args = parser.parse_args()
+
+start = date.fromisoformat(args.start)
+end = date.fromisoformat(args.end)
 if end < start:
     raise ValueError("End date must be on or after start date")
 
@@ -21,7 +30,8 @@ value_columns = [
 
 con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
 con.execute("INSTALL httpfs; LOAD httpfs; SET s3_region = 'us-east-1';")
-con.execute("LOAD \"../build/release/extension/grib2/grib2.duckdb_extension\"")
+extension = str(args.extension.resolve()).replace("'", "''")
+con.execute(f"LOAD '{extension}'")
 
 cycles = [
     datetime.combine(start + timedelta(days=day_offset), datetime.min.time()).replace(hour=hour)

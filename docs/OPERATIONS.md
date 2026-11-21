@@ -76,7 +76,7 @@ inventory columns are NULL. Any other failure on the sidecar, including 401 (wro
 A sidecar that exists but that you may not read is therefore indistinguishable from a missing one; if the inventory
 columns are unexpectedly NULL on a remote file, check the access policy for the `.idx` object.
 
-## Missing values and input safety
+## Untrusted input
 
 Cells marked missing by a bitmap or by complex packing are returned with a SQL `NULL`. The decoder configures ecCodes to
 use NaN as its missing marker, which preserves a legitimate value of 9999.

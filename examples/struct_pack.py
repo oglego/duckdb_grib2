@@ -1,4 +1,6 @@
 from datetime import date, datetime, timedelta
+import argparse
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
 
@@ -6,8 +8,15 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-start = date.fromisoformat(input("Start date (YYYY-MM-DD): "))
-end = date.fromisoformat(input("End date (YYYY-MM-DD): "))
+parser = argparse.ArgumentParser()
+parser.add_argument("--start", default="2026-11-10", help="Start date (YYYY-MM-DD)")
+parser.add_argument("--end", default="2026-11-10", help="End date (YYYY-MM-DD)")
+parser.add_argument("--extension", type=Path, default=Path(__file__).resolve().parents[1] /
+                    "build/release/extension/grib2/grib2.duckdb_extension")
+args = parser.parse_args()
+
+start = date.fromisoformat(args.start)
+end = date.fromisoformat(args.end)
 if end < start:
     raise ValueError("End date must be on or after start date")
 
@@ -15,7 +24,8 @@ search = r":(?:TMP:2 m above ground|DPT:2 m above ground|UGRD:10 m above ground|
 bbox = [-93.4536, 37.0783, -93.1019, 37.2928]       # lon_min, lat_min, lon_max, lat_max
 con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
 con.execute("INSTALL httpfs; LOAD httpfs; SET s3_region = 'us-east-1';")
-con.execute("LOAD \"../build/release/extension/grib2/grib2.duckdb_extension\"")
+extension = str(args.extension.resolve()).replace("'", "''")
+con.execute(f"LOAD '{extension}'")
 
 cycles = [
     datetime.combine(start + timedelta(days=day_offset), datetime.min.time()).replace(hour=hour)

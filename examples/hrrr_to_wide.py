@@ -1,10 +1,19 @@
 from datetime import date, datetime, timedelta
+import argparse
+from pathlib import Path
 from time import perf_counter
 
 import duckdb
 
-start = date.fromisoformat(input("Start date (YYYY-MM-DD): "))
-end = date.fromisoformat(input("End date (YYYY-MM-DD): "))
+parser = argparse.ArgumentParser()
+parser.add_argument("--start", default="2026-11-10", help="Start date (YYYY-MM-DD)")
+parser.add_argument("--end", default="2026-11-10", help="End date (YYYY-MM-DD)")
+parser.add_argument("--extension", type=Path, default=Path(__file__).resolve().parents[1] /
+                    "build/release/extension/grib2/grib2.duckdb_extension")
+args = parser.parse_args()
+
+start = date.fromisoformat(args.start)
+end = date.fromisoformat(args.end)
 if end < start:
     raise ValueError("End date must be on or after start date")
 
@@ -30,7 +39,8 @@ if EXTRA_CELL_VALUES not in ("values", "nan"):
 
 con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
 con.execute("INSTALL httpfs; LOAD httpfs; SET s3_region = 'us-east-1';")
-con.execute("LOAD \"../build/release/extension/grib2/grib2.duckdb_extension\"")
+extension = str(args.extension.resolve()).replace("'", "''")
+con.execute(f"LOAD '{extension}'")
 
 
 def tracked_memory_mb():

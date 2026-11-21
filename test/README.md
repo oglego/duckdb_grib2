@@ -65,7 +65,7 @@ Ubuntu's ecCodes, which is not built thread-safe, so it exercises the serialisin
 is needed: a race may not show on a small runner. `--unguarded` runs the same work without the guard, as an experiment.
 
 These cover the parsers in this repository only. ecCodes itself, which decodes every message, is not fuzzed here; see
-"Untrusted input" in the README.
+[Untrusted input](../docs/OPERATIONS.md#untrusted-input).
 
 ## Remote reads
 
