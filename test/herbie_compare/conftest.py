@@ -59,6 +59,9 @@ def rg(refs):
     try:
         return Grib2Client.discover()
     except Grib2Unavailable as exc:
+        if os.environ.get("GRIB2_REQUIRE_EXTENSION"):
+            # CI sets this: a missing or unloadable extension must fail the run, not skip every test
+            raise
         pytest.skip(str(exc))
 
 

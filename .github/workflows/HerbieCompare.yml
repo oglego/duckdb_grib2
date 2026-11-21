@@ -1,0 +1,121 @@
+#
+# Compares read_grib2 / grib2_index with Herbie (cfgrib + ecCodes) on the committed fixtures. See test/herbie_compare/README.md.
+#
+# Manual only: open the Actions tab, pick "Herbie Comparison" and press "Run workflow". It never runs on push, pull request or
+# a schedule, because the build is slow.
+#
+# Two jobs, because the cost differs by two orders of magnitude:
+#   reference-sanity  about 2 minutes, no build. Checks the Herbie-derived reference itself against ecCodes.
+#   compare           builds DuckDB and the extension (slow cold, fast with ccache), then runs the SQL tests and the whole
+#                     suite. Turn on "runslow" to also compare every cell of the CONUS and Alaska grids.
+#
+# Both jobs run by default. To skip the build and run only the quick reference check, untick "build_and_compare".
+#
+name: Herbie Comparison
+on:
+  workflow_dispatch:
+    inputs:
+      build_and_compare:
+        description: "Build DuckDB and the extension and run the full comparison (slow). Untick for the reference check only."
+        type: boolean
+        default: true
+      runslow:
+        description: "Also run the slow tests (every cell of the CONUS and Alaska grids)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference-sanity:
+    name: Herbie reference sanity (no build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install comparison dependencies
+        working-directory: test/herbie_compare
+        run: uv sync --frozen
+      - name: Check the reference against ecCodes
+        working-directory: test/herbie_compare
+        run: uv run pytest test_reference_sanity.py
+
+  compare:
+    name: DuckDB vs Herbie comparison suite
+    if: ${{ inputs.build_and_compare }}
+    runs-on: ubuntu-latest
+    # A cold DuckDB build is slow on a hosted runner; the ccache step makes later runs much faster. The first run (or a run
+    # after the DuckDB submodule moves) may need the whole hour.
+    timeout-minutes: 60
+    env:
+      # Without this the Makefile builds with Unix Makefiles and no parallelism. The official build pipeline uses it too.
+      GEN: ninja
+      # Make a missing extension a failure instead of a skip (see conftest.py), so a broken build cannot look like a pass
+      GRIB2_REQUIRE_EXTENSION: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # duckdb/ and extension-ci-tools/ are submodules, and the Makefile includes a file from the latter
+          submodules: recursive
+      - name: Install ecCodes and Ninja
+        # Ubuntu's ecCodes ships a CMake config, so no vcpkg is needed here. It is older than the vcpkg build (2.34, not
+        # thread-safe), so this job also exercises the serialising guard.
+        run: sudo apt-get update && sudo apt-get install -y libeccodes-dev ninja-build
+      - name: Set up ccache
+        # DuckDB's CMake uses ccache when it is on the PATH
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
+        with:
+          key: herbie-comparison-${{ hashFiles('.gitmodules') }}
+          max-size: 3GB
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build DuckDB and the extension
+        run: make
+      - name: Check the build produced what the suite needs
+        run: ls -l build/release/duckdb build/release/extension/grib2/grib2.duckdb_extension
+      - name: Run the SQL logic tests
+        run: make test
+      - name: Install comparison dependencies
+        working-directory: test/herbie_compare
+        run: uv sync --frozen
+      - name: Run the Herbie comparison suite
+        working-directory: test/herbie_compare
+        run: >
+          uv run pytest --junitxml=herbie-compare.xml
+          ${{ inputs.runslow && '--runslow' || '' }}
+      - name: Fail if tests that need the extension were skipped
+        if: always()
+        working-directory: test/herbie_compare
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          try:
+              root = ET.parse("herbie-compare.xml").getroot()
+          except FileNotFoundError:
+              sys.exit("no junit report: the suite did not run")
+          skipped = []
+          for case in root.iter("testcase"):
+              node = case.find("skipped")
+              if node is None:
+                  continue
+              reason = node.get("message", "")
+              # --runslow and the live-bucket tests are skipped on purpose unless asked for
+              if "--runslow" in reason or "GRIB2_NETWORK" in reason:
+                  continue
+              skipped.append(f"{case.get('classname')}::{case.get('name')}: {reason}")
+          if skipped:
+              sys.exit("unexpected skips:\n" + "\n".join(skipped[:20]))
+          print("no unexpected skips")
+          PY
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: herbie-compare-report
+          path: test/herbie_compare/herbie-compare.xml

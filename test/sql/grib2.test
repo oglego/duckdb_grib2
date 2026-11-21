@@ -917,3 +917,33 @@ pr	100	100
 
 statement ok
 RESET threads;
+
+# A bitmap indicator of 254 ("reuse the previous bitmap", test/data/generate_bad_bitmap_indicator_sample.py) has nothing to
+# refer to in a one-field message, and ecCodes would decode it as if it had no bitmap: it is refused, not decoded
+statement error
+SELECT * FROM read_grib2('test/data/bad_bitmap_indicator.grib2', all_cells := true);
+----
+bitmap section uses an indicator
+
+statement error
+SELECT grib2_message_info(content) FROM read_blob('test/data/bad_bitmap_indicator.grib2');
+----
+bitmap section uses an indicator
+
+# The index only reads headers, so it still lists the message
+query II
+SELECT message_number, packing_template FROM grib2_index('test/data/bad_bitmap_indicator.grib2');
+----
+1	0
+
+# A north polar stereographic grid true at LaD = -90 (test/data/generate_degenerate_polar_sample.py) has a projection scale of
+# zero: every cell would land on one point. The grid is refused, with all_cells and points alike.
+statement error
+SELECT * FROM read_grib2('test/data/degenerate_polar.grib2', all_cells := true);
+----
+latitude where the grid is true
+
+statement error
+SELECT * FROM read_grib2('test/data/degenerate_polar.grib2', points := [{'lat': 60.0, 'lon': -150.0}]);
+----
+latitude where the grid is true

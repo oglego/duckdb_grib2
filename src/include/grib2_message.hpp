@@ -298,6 +298,15 @@ inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const Mess
 		error = "the message has no complete data representation, bitmap and data sections";
 		return false;
 	}
+	// Only "bitmap follows" (0) and "no bitmap" (255) describe a complete single field. 254 means "reuse the bitmap of
+	// an earlier field" and 1-253 are predefined bitmaps; with one field per message neither has anything to refer to,
+	// and ecCodes ignores them and decodes the field as if it had no bitmap, which would return unmasked values.
+	if (section6_length < 6 || (section6[5] != 0 && section6[5] != 255)) {
+		error = "the bitmap section uses an indicator (" +
+		        (section6_length >= 6 ? std::to_string(section6[5]) : std::string("missing")) +
+		        ") that is not supported (only 0, an explicit bitmap, and 255, no bitmap)";
+		return false;
+	}
 	// An explicit bitmap (indicator 0) carries one bit per grid point
 	if (section6_length >= 6 && section6[5] == 0 && (section6_length - 6) * 8 < summary.grid_points) {
 		error = "the bitmap is too short for the number of grid points";
@@ -404,6 +413,13 @@ inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const Mess
 			error = "the data section is too short for the packed group values";
 			return false;
 		}
+	}
+	// The group lengths must add up to the number of coded values. Fewer would leave the tail of the field unset, and
+	// ecCodes would return those cells as if they were data.
+	if (total_values != values) {
+		error = "the groups hold " + std::to_string(total_values) + " values but the message declares " +
+		        std::to_string(values);
+		return false;
 	}
 	return true;
 }

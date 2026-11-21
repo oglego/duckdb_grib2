@@ -350,6 +350,56 @@ int main() {
 		Check(!Accepted(repeated, error), "a message that repeats sections 6 and 7 was accepted");
 		Check(error.find("more than one field") != std::string::npos, "unhelpful error for repeated 6 and 7: " + error);
 	}
+	{ // Only bitmap indicators 0 (explicit bitmap) and 255 (no bitmap) describe a complete single field. 254 (reuse)
+	  // and 1-253 (predefined) are ignored by ecCodes, which would then return unmasked values.
+		const std::vector<uint8_t> none = ReadFile("fixtures/hrrr_msg90_csnow_simple_const.grib2");
+		const std::vector<uint8_t> explicit_bitmap = ReadFile("test/data/masked_gu.grib2");
+		Check(!none.empty() && !explicit_bitmap.empty(), "cannot read the bitmap indicator source messages");
+		std::string error;
+		Check(Accepted(none, error), "a message with no bitmap (255) was refused: " + error);
+		Check(Accepted(explicit_bitmap, error), "a message with an explicit bitmap (0) was refused: " + error);
+		for (const int indicator : {1, 100, 253, 254}) {
+			std::vector<uint8_t> msg = none;
+			msg[FindSection(msg, 6) + 5] = static_cast<uint8_t>(indicator);
+			error.clear();
+			Check(!Accepted(msg, error), "bitmap indicator " + std::to_string(indicator) + " was accepted");
+			Check(error.find("indicator") != std::string::npos,
+			      "unhelpful error for bitmap indicator " + std::to_string(indicator) + ": " + error);
+		}
+		{ // a section 6 with no indicator octet at all
+			std::vector<uint8_t> msg = none;
+			const size_t section6 = FindSection(msg, 6);
+			msg.erase(msg.begin() + section6 + 5);
+			Put32(msg, section6, 5);
+			for (int b = 0; b < 8; b++) {
+				msg[8 + b] = static_cast<uint8_t>(static_cast<uint64_t>(msg.size()) >> (8 * (7 - b)));
+			}
+			Check(!Accepted(msg, error), "a section 6 without an indicator octet was accepted");
+		}
+	}
+	{ // With complex packing the group lengths must add up to the declared number of values; fewer would leave the end
+	  // of the field unset
+		for (const char *path :
+		     {"test/data/sample.grib2", "fixtures/nbm_gu_msg.grib2", "fixtures/hrrr_msg70_snod_spatial.grib2"}) {
+			const std::vector<uint8_t> valid = ReadFile(path);
+			Check(!valid.empty(), std::string("cannot read ") + path);
+			const size_t section5 = FindSection(valid, 5);
+			std::string error;
+			Check(Accepted(valid, error), std::string(path) + " is valid: " + error);
+			const uint32_t last = ReadBigEndian32(&valid[section5 + 42]); // true length of the last group
+			for (const uint32_t other : {last - 1, last + 1}) {
+				if (last == 0 && other == last - 1) {
+					continue;
+				}
+				std::vector<uint8_t> msg = valid;
+				Put32(msg, section5 + 42, other);
+				error.clear();
+				Check(!Accepted(msg, error), std::string(path) + ": groups summing to a different count than the " +
+				                                 "declared values were accepted (last group " + std::to_string(other) +
+				                                 ")");
+			}
+		}
+	}
 	std::cout << "checks=" << checks << " messages=" << messages << " failures=" << failures << "\n";
 	return failures ? 1 : 0;
 }

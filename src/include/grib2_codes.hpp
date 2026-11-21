@@ -246,7 +246,10 @@ inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 	spec.alternative_rows = Grib2LongKeyOrDefault(h, "alternativeRowScanning", 0) != 0;
 	// A polar stereographic grid may be true at the pole itself; the cone and cylinder projections cannot
 	const double max_lad = spec.type == "polar_stereographic" ? 90.0 : 89.999999;
-	if (!std::isfinite(spec.lad) || std::fabs(spec.lad) > max_lad) {
+	// North polar stereographic scales by 1 + sin(LaD), which is zero at LaD = -90 and collapses every cell onto one
+	// point
+	const bool polar_lad_degenerate = spec.type == "polar_stereographic" && spec.lad <= -89.999999;
+	if (!std::isfinite(spec.lad) || std::fabs(spec.lad) > max_lad || polar_lad_degenerate) {
 		throw InvalidInputException(std::string(function) + ": the latitude where the grid is true (LaD) is not valid");
 	}
 	std::string grid_error;
