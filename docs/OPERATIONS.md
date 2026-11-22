@@ -76,10 +76,26 @@ inventory columns are NULL. Any other failure on the sidecar, including 401 (wro
 A sidecar that exists but that you may not read is therefore indistinguishable from a missing one; if the inventory
 columns are unexpectedly NULL on a remote file, check the access policy for the `.idx` object.
 
-## Untrusted input
+How much of a sidecar is checked against the file depends on the call:
+
+| Call | What is verified against the message headers |
+|---|---|
+| `grib2_index(file)` | The first message only. The other rows are listed as the `.idx` gives them, so one wrong offset after message 1 is not noticed. This keeps the listing to one small read. |
+| `grib2_index(file, details := true)` | Every message: its length must match what the `.idx` implies. |
+| `read_grib2` | Every message it reads, before decoding it. |
+
+Use `details := true` to audit a sidecar, or whenever a wrong inventory would matter more than the extra reads (one per
+message, which adds up on a remote file).
+
+## Missing values
 
 Cells marked missing by a bitmap or by complex packing are returned with a SQL `NULL`. The decoder configures ecCodes to
 use NaN as its missing marker, which preserves a legitimate value of 9999.
+
+## Untrusted input
+
+**Use this extension on files you trust.** It is built for archives from sources such as NOAA, not for files uploaded
+by strangers. If you must read files you do not control, run the query in a separate, sandboxed process.
 
 The `.idx` and section-header parsers are fuzzed and sanitizer-checked in CI. Before a complete message reaches ecCodes,
 the extension validates its sections, counts, and supported packing layout. However, ecCodes still parses the full

@@ -273,7 +273,9 @@ SELECT * FROM grib2_index('test/data/stale.grib2');
 ----
 belong to this file
 
-# The sidecar is verified as messages are read, so a wrong entry after message 1 is still caught.
+# How much of a sidecar is verified depends on the call (docs/OPERATIONS.md, "Remote files and the .idx sidecar").
+# stale_after_first.grib2.idx is right for message 1 and one byte off from message 3 on. The plain listing checks only
+# message 1, so it prints the inventory as written (this documents that behaviour on purpose)...
 query II
 SELECT message_number, byte_offset FROM grib2_index('test/data/stale_after_first.grib2');
 ----
@@ -281,6 +283,12 @@ SELECT message_number, byte_offset FROM grib2_index('test/data/stale_after_first
 2	35188
 3	63046
 4	163091
+
+# ...while details := true checks every message, and read_grib2 checks each message it reads. Both catch it.
+statement error
+SELECT * FROM grib2_index('test/data/stale_after_first.grib2', details := true);
+----
+belong to this file
 
 statement error
 SELECT * FROM read_grib2('test/data/stale_after_first.grib2', message := 3, points := [{'lat': 17.7425, 'lon': -66.4248}]);
@@ -703,7 +711,9 @@ SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [-180, -90,
 ----
 37249
 
-# A bbox covers the expected cells on the CONUS Lambert grid and the Alaska polar-stereographic grid.
+# A bbox covers the expected cells on the CONUS Lambert grid and the Alaska polar-stereographic grid. The counts were
+# computed independently of the extension, from ecCodes' own latitude and longitude arrays, and test_known_box_counts in
+# test/herbie_compare/test_bbox.py checks them again against Herbie's coordinates on every run of that suite.
 query I
 SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-125, 20, -60, 55]);
 ----
@@ -1027,7 +1037,8 @@ pr	100	100
 statement ok
 RESET threads;
 
-# Separate DuckDB connections can read and index the same extension data concurrently.
+# Separate DuckDB connections do not interfere with each other. sqllogictest runs these one after another, so this checks
+# isolation only; threads reading at the same time are covered by test/concurrency/test_concurrent_connections.py.
 query I con1
 SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}]);
 ----

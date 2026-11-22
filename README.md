@@ -23,6 +23,11 @@
 > other GRIB2 files use, are not supported yet**. Gaussian grids (ECMWF), ellipsoidal earths, south polar grids,
 > JPEG 2000 and CCSDS packing, and messages that hold more than one field are also unsupported. Decoding such messages
 > fails with an error; `grib2_index` can still list their metadata. See [supported data and limits](docs/OPERATIONS.md).
+>
+> **Use trusted files only.** The extension checks each message's structure before ecCodes decodes it, and the parsers
+> are fuzzed in CI, but ecCodes itself trusts its input and a decoder crash on a deliberately malformed file cannot be
+> ruled out. Do not point it at files uploaded by people you do not trust without sandboxing the process. See
+> [untrusted input](docs/OPERATIONS.md#untrusted-input).
 
 ### Examples
 

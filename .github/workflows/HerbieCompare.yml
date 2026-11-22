@@ -84,6 +84,10 @@ jobs:
       - name: Run the remote read tests
         # HTTP and S3 (path style) against a local server; httpfs is installed from the DuckDB extension repository
         run: python3 -m unittest discover -s test/remote_read -v
+      - name: Run the concurrency tests
+        # Threads on separate connections in one process. Needs the python duckdb package at the version the extension is
+        # built for (the v2.0.0 DuckDB submodule), so keep this pin in step with the submodule.
+        run: uv run --no-project --with duckdb==2.0.0 python -m unittest discover -s test/concurrency -v
       - name: Install comparison dependencies
         working-directory: test/herbie_compare
         run: uv sync --frozen

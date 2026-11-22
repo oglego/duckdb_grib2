@@ -216,3 +216,27 @@ def test_bbox_rows_are_in_ascending_grid_order(name, grid, rg):
     df = rg.read(path, bbox=_box_around(ref, ref.ni // 2, ref.nj // 2, 10.0))
     flat = df["j"].to_numpy(dtype=np.int64) * ref.ni + df["i"].to_numpy(dtype=np.int64)
     assert len(flat) > 0 and (np.diff(flat) > 0).all()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The cell counts pinned in test/sql/grib2.test for three boxes. The reference count comes from Herbie's own
+# latitude/longitude arrays, not from the extension, so the pins cannot just repeat whatever the extension returns.
+KNOWN_BOX_COUNTS = [
+    ("co", [-125, 20, -60, 55], 3232563),
+    ("ak", [-170, 50, -140, 72], 448506),
+    ("gu", [-180, -90, 180, 90], 37249),
+]
+
+
+@pytest.mark.parametrize("name,box,expected", KNOWN_BOX_COUNTS, ids=[c[0] for c in KNOWN_BOX_COUNTS])
+def test_known_box_counts(name, box, expected, grid, rg):
+    from client import sql_str
+
+    ref, path = grid(name)
+    lon = wrap180(ref.lon)
+    inside = (ref.lat >= box[1]) & (ref.lat <= box[3]) & (lon >= box[0]) & (lon <= box[2])
+    assert int(inside.sum()) == expected, f"{name}: the count pinned in grib2.test disagrees with Herbie's coordinates"
+    n = rg.sql(f"SELECT count(*) AS n FROM read_grib2({sql_str(path)}, bbox := {box})")["n"][0]
+    assert (
+        int(n) == expected
+    ), f"{name}: read_grib2 returned {int(n)} cells for {box}, Herbie's coordinates give {expected}"

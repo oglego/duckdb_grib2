@@ -77,3 +77,14 @@ rows, and that a truncated or missing remote file is an error. Standard library 
 network access to install httpfs (or `GRIB2_HTTPFS`). It runs in the manual Herbie workflow.
 
     python3 -m unittest discover -s test/remote_read -v
+
+## Concurrency
+
+`test/concurrency/` runs several DuckDB connections on separate threads in one process, all calling `read_grib2`,
+`grib2_index` and the scalar functions at once, and compares every result with a single-threaded run. The SQL logic tests
+run statements one after another even on separate connections, so they cannot show a race; this can. It also checks that
+a failing query on one thread leaves the others alone. Needs the Python `duckdb` package at the version the extension is
+built for (`pip install duckdb==2.0.0`) and `make`; otherwise it is skipped, or fails when `GRIB2_REQUIRE_EXTENSION` is
+set. It runs in the manual Herbie workflow.
+
+    python3 -m unittest discover -s test/concurrency -v

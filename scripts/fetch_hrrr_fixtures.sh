@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Download real HRRR messages as test fixtures for duckdb_grib2, by byte range, and check each one.
 #
-# What it fetches:
-#   1. a CSNOW simple-packing constant field
-#   2. an ICEC spatial-differencing constant field
-#   3. an SNOD spatial-differencing real-data field
-#   4. a simple-packing message with real data, when one is small enough
+# What it fetches (the committed fixtures, under the same names, see fixtures/README.md "HRRR provenance"):
+#   1. fixtures/hrrr_msg90_csnow_simple_const.grib2    message 90, CSNOW, template 5.0, a constant field
+#   2. fixtures/hrrr_msg166_icec_spatial.grib2         message 166, ICEC, template 5.3, a constant field
+#   3. fixtures/hrrr_msg70_snod_spatial.grib2          message 70, SNOD, template 5.3, real data
+#   4. optionally, a simple-packing message with real data when one is small enough. This one is NOT committed: the
+#      repo has no real varying field with template 5.0 (see fixtures/README.md).
+# Each of 1 to 3 is looked up by message number AND variable AND packing template, so a run whose numbering differs
+# stops with an explanation instead of saving some other message under the fixture's name. Each is then compared with
+# the copy committed in git, so with the default DATE and CYCLE you should see "identical to the committed fixture".
 #
 # Usage, from anywhere inside the repo:
 #   bash fetch_hrrr_fixtures.sh
@@ -17,7 +21,7 @@
 #   CYCLE=00                   HRRR hourly cycle
 #   MAX_REAL_BYTES=1500000     skip the 5.0 real-data fixture if the chosen message is bigger than this
 #
-# It stops at the first problem. Nothing is committed for you.
+# It overwrites the files above in the working tree. It stops at the first problem. Nothing is committed for you.
 
 set -euo pipefail
 
@@ -121,16 +125,21 @@ mkdir -p "$OUT_DIR"
 echo
 echo "== Downloading"
 
-download_indexed() {
-  local variable="$1" packing="$2" outfile="$3"
+# download_fixture MESSAGE VARIABLE PACKING OUTFILE
+# Fetch one message, only if the inventory says message MESSAGE really is VARIABLE with packing template PACKING.
+download_fixture() {
+  local want_msg="$1" variable="$2" packing="$3" outfile="$4"
   local row offset length msg
   row="$(q "SELECT message_number, byte_offset, byte_length
             FROM grib2_index('${S3_URL}', details := true)
-            WHERE variable = '${variable}' AND packing_template = ${packing}
-            ORDER BY byte_length DESC
-            LIMIT 1")"
+            WHERE message_number = ${want_msg} AND variable = '${variable}' AND packing_template = ${packing}")"
   if [ -z "$row" ]; then
-    echo "error: could not find ${variable} packing template ${packing}" >&2
+    echo "error: message ${want_msg} of ${FILE} (${DATE}) is not ${variable} with packing template ${packing}." >&2
+    echo "       The message numbering differs for this DATE/CYCLE. The inventory around it:" >&2
+    q "SELECT message_number, variable, level, packing_template, byte_length
+       FROM grib2_index('${S3_URL}', details := true)
+       WHERE variable = '${variable}' OR message_number = ${want_msg}
+       ORDER BY message_number" >&2
     exit 1
   fi
   IFS='|' read -r msg offset length <<EOF
@@ -138,11 +147,21 @@ $row
 EOF
   echo "selected ${variable}: msg ${msg}, offset ${offset}, length ${length}"
   grab "$offset" "$length" "$outfile"
+  # Compare with the copy committed in git, when there is one
+  if git cat-file -e "HEAD:${outfile}" 2>/dev/null; then
+    if git show "HEAD:${outfile}" | cmp -s - "$outfile"; then
+      echo "     identical to the committed fixture"
+    else
+      echo "     DIFFERS from the committed fixture: the source data for ${DATE} ${CYCLE}z may have been replaced" >&2
+    fi
+  else
+    echo "     (no committed copy to compare with)"
+  fi
 }
 
-download_indexed CSNOW 0 "${OUT_DIR}/hrrr_csnow_simple_const.grib2"
-download_indexed ICEC 3 "${OUT_DIR}/hrrr_icec_spatial.grib2"
-download_indexed SNOD 3 "${OUT_DIR}/hrrr_snod_spatial.grib2"
+download_fixture 90 CSNOW 0 "${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2"
+download_fixture 166 ICEC 3 "${OUT_DIR}/hrrr_msg166_icec_spatial.grib2"
+download_fixture 70 SNOD 3 "${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
 
 REAL_FILE=""
 if [ -n "$REAL_ROW" ]; then
@@ -157,7 +176,7 @@ fi
 
 echo
 echo "== Checking each file with the extension"
-FILES="${OUT_DIR}/hrrr_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_icec_spatial.grib2 ${OUT_DIR}/hrrr_snod_spatial.grib2"
+FILES="${OUT_DIR}/hrrr_msg90_csnow_simple_const.grib2 ${OUT_DIR}/hrrr_msg166_icec_spatial.grib2 ${OUT_DIR}/hrrr_msg70_snod_spatial.grib2"
 [ -n "$REAL_FILE" ] && FILES="$FILES $REAL_FILE"
 for f in $FILES; do
   echo "--- $f"
