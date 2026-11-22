@@ -12,3 +12,9 @@ fixtures/nbm/
 
 # Local-only build config (adds httpfs for testing remote files); see the README
 extension_config_local.cmake
+
+# Python caches and test output
+__pycache__/
+*.pyc
+.pytest_cache/
+herbie-compare.xml

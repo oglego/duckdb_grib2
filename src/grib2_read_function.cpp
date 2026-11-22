@@ -274,6 +274,25 @@ struct PendingFetch {
 	int64_t length;
 };
 
+//! A file handle that is opened the first time a message is read from it, not when the read is queued. Messages are
+//! queued ahead of the one being decoded, so opening at queue time would report a failure to open the next file against
+//! the current message.
+struct LazyReader {
+	LazyReader(FileSystem &fs_p, std::string path_p) : fs(fs_p), path(std::move(path_p)) {
+	}
+	std::string ReadAt(int64_t offset, int64_t length) {
+		if (!reader) {
+			reader = make_uniq<FileReader>(fs, path);
+		}
+		return reader->ReadAt(offset, length);
+	}
+
+private:
+	FileSystem &fs;
+	std::string path;
+	unique_ptr<FileReader> reader;
+};
+
 struct PointHit {
 	idx_t point_index;
 	GridCell cell;
@@ -310,11 +329,11 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	//! std::launch::async when background threads are allowed (grib2_io_threads > 1); deferred (the default setting)
 	//! runs each fetch on the scanning thread when it is needed
 	std::launch fetch_policy = std::launch::deferred;
-	//! The most recently opened file, reused while consecutive messages come from it. Only used when fetches run on the
+	//! The most recently used file, reused while consecutive messages come from it. Only used when fetches run on the
 	//! scanning thread (deferred): messages are in file order, so one open handle is enough, and it saves a request per
-	//! message on remote files (httpfs asks for the size every time a file is opened).
+	//! message on remote files (httpfs asks for the size every time a file is opened). Opened on first read.
 	std::string reader_path;
-	std::shared_ptr<const FileReader> reader;
+	std::shared_ptr<LazyReader> reader;
 	//! How many messages are fetched ahead of the one being decoded: grib2_io_threads, capped at
 	//! GRIB2_MAX_PREFETCH_MESSAGES. Always at least one.
 	idx_t prefetch_depth = 1;
@@ -399,11 +418,11 @@ void FillPrefetch(Grib2ReadGlobalState &state) {
 		FileSystem *fs = state.fs;
 		PendingFetch fetch;
 		fetch.length = row.byte_length;
-		std::shared_ptr<const FileReader> shared;
+		std::shared_ptr<LazyReader> shared;
 		if (state.fetch_policy == std::launch::deferred) {
 			// Every fetch runs on this thread, so they can share one handle
 			if (!state.reader || state.reader_path != row.file_path) {
-				state.reader = std::make_shared<const FileReader>(*fs, row.file_path);
+				state.reader = std::make_shared<LazyReader>(*fs, row.file_path);
 				state.reader_path = row.file_path;
 			}
 			shared = state.reader;

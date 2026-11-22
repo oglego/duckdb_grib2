@@ -64,9 +64,8 @@ public:
 	      size(SafeFileSize(path_p, handle->GetFileSize())) {
 	}
 
-	//! Open a file, or return nullptr when it does not exist. One request for a remote file, where checking that it
-	//! exists first and then opening it would be two.
-	//! Open a file that may not be there, such as the .idx next to a GRIB file. A missing file gives nullptr.
+	//! Open a file that may not be there, such as the .idx next to a GRIB file. A missing file gives nullptr. This is
+	//! one request for a remote file, where checking that it exists first and then opening it would be two.
 	//!
 	//! httpfs reports a missing object as nullptr only for HTTP 404. S3 answers 403 instead of 404 for a key that does
 	//! not exist when the caller may not list the bucket, which is how most private buckets are set up, so a plain

@@ -127,10 +127,16 @@ def test_truncated_message_fails_cleanly(rg, tmp_path, keep):
     f = tmp_path / "truncated.grib2"
     f.write_bytes(data[: int(len(data) * keep)])
     err = rg.error(read_grib2_sql(str(f), points=[(13.818, 147.0361)]))
-    if err is None:  # an empty file may simply hold no messages
-        assert len(rg.read(str(f), points=[(13.818, 147.0361)])) == 0 and keep == 0.0
-    else:
-        assert err
+    assert err, f"keep={keep}: a truncated or empty file must be an error, not an empty result"
+    if keep == 0.0:
+        assert "empty" in err
+
+
+def test_trailing_bytes_after_the_last_message_are_reported_as_trailing_data(rg, tmp_path):
+    f = tmp_path / "trailing.grib2"
+    f.write_bytes((FIXTURE_DIR / "nbm_gu_msg.grib2").read_bytes() + b"\n")
+    err = rg.error(read_grib2_sql(str(f), points=[(13.818, 147.0361)]))
+    assert err and "follow the last message" in err, err
 
 
 def test_garbage_and_wrong_magic_fail_cleanly(rg, tmp_path):

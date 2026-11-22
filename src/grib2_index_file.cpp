@@ -27,6 +27,9 @@
 
 namespace duckdb {
 
+//! The indicator section (section 0) alone is 16 bytes, so fewer than this cannot be a message
+static constexpr int64_t MIN_GRIB_MESSAGE_BYTES = 16;
+
 optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int minute, int second) {
 	date_t date;
 	if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59 ||
@@ -123,6 +126,11 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
                bool verify_first_message, ClientContext *context) {
 	const FileReader file(fs, path);
 	const std::string idx_path = path + ".idx";
+	// A zero-byte file is not a GRIB file with no messages: it is usually a download that failed, and an empty result
+	// would hide that
+	if (file.size == 0) {
+		throw InvalidInputException(path + ": the file is empty");
+	}
 
 	// Opening the sidecar directly, instead of checking that it exists first, saves a request on remote files
 	const unique_ptr<FileReader> idx_file = use_idx ? FileReader::OpenIfExists(fs, idx_path) : nullptr;
@@ -189,6 +197,14 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 	while (offset < file.size) {
 		if (context) {
 			context->InterruptCheck();
+		}
+		// Bytes left over after the last message (a stray newline, padding) are too few to hold another message. Say
+		// so, rather than reporting a truncated message that does not exist. (Not for the first message: a file that is
+		// short from the start is a truncated file.)
+		if (number > 1 && file.size - offset < MIN_GRIB_MESSAGE_BYTES) {
+			ThrowBadMessage(path, number, offset,
+			                std::to_string(file.size - offset) +
+			                    " byte(s) follow the last message, too few for another GRIB message (trailing data?)");
 		}
 		MessageSummary summary;
 		std::string prefix;

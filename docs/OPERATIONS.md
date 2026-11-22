@@ -105,7 +105,8 @@ trusted data when possible.
 
 For a URL with a query string, the extension appends `.idx` to the full URL, so a sidecar is generally not found and
 `search` is unavailable. Use `message := ...` to select by message number instead. Files without an `.idx` are scanned
-from the beginning, and truncated messages produce an error.
+from the beginning. A truncated message, an empty file, and bytes left over after the last message (even one stray
+newline) are all errors, so a failed download cannot pass as a file with no data.
 
 ## Performance expectations
 

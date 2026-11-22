@@ -24,6 +24,10 @@ on:
         type: boolean
         default: false
 
+# The jobs only read the repository
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

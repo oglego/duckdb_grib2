@@ -1111,3 +1111,26 @@ query T
 SELECT strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': 37.2090, 'lon': -93.2923}]);
 ----
 2026-10-23 01:00
+
+# A zero-byte file is an error, not a file with no messages: it is usually a download that failed
+statement error
+SELECT * FROM grib2_index('test/data/empty.grib2');
+----
+the file is empty
+
+statement error
+SELECT * FROM read_grib2('test/data/empty.grib2', all_cells := true);
+----
+the file is empty
+
+# One real message followed by a newline (test/data/generate_edge_case_files.py): too few bytes for another message, and
+# reported as trailing data, not as a truncated message
+statement error
+SELECT * FROM grib2_index('test/data/trailing_bytes.grib2');
+----
+follow the last message
+
+statement error
+SELECT * FROM read_grib2('test/data/trailing_bytes.grib2', all_cells := true);
+----
+follow the last message
