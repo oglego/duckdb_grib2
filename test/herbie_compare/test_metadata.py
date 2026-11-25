@@ -45,10 +45,10 @@ def _inventory(workdir):
 def _build_nbm_case(work):
     """The real 154-message NBM .idx next to a stand-in data file.
 
-    The extension checks the first message against the file (a sidecar that does not belong to it is an error), so the
-    stand-in starts with a genuine GRIB2 message, the CONUS fixture.  Its length differs from the first message in the
-    real .idx, so every later offset in the .idx is shifted by the difference; Herbie and the extension both read the
-    shifted .idx, so the comparison is unaffected.  The rest of the file is zeros: only its size matters.
+    The extension checks the first and last messages against the file, so the stand-in starts with a genuine GRIB2
+    message and ends with a valid header copied from it. Its length differs from the first message in the real .idx, so
+    every later offset in the .idx is shifted by the difference; Herbie and the extension both read the shifted .idx,
+    so the comparison is unaffected. The space between those headers is zeros: only its size matters.
     """
     first = (FIXTURE_DIR / "nbm_msg.grib2").read_bytes()
     lines = NBM_IDX.read_text().splitlines()
@@ -62,6 +62,12 @@ def _build_nbm_case(work):
     with open(target, "wb") as f:
         f.write(first)
         f.truncate(size)
+    last_offset = int(shifted[-1].split(":", 2)[1])
+    last_header = bytearray(first[:4096])
+    last_header[8:16] = (size - last_offset).to_bytes(8, "big")
+    with open(target, "r+b") as f:
+        f.seek(last_offset)
+        f.write(last_header)
     Path(str(target) + ".idx").write_text("\n".join(shifted) + "\n")
     return target, size
 
