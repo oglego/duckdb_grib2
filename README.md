@@ -18,11 +18,11 @@
 `httpfs` extension.
 
 > **Scope and limitations (v0.1).** Verified on NOAA NBM (CONUS, Alaska, Hawaii, Puerto Rico, Guam) and the HRRR
-> CONUS surface file. Supported grids are Lambert conformal, north polar stereographic, and Mercator on a spherical
-> earth, and supported packing templates are 5.0, 5.2 and 5.3. **Regular latitude/longitude grids, which GFS and many
-> other GRIB2 files use, are not supported yet**. Gaussian grids (ECMWF), ellipsoidal earths, south polar grids,
-> JPEG 2000 and CCSDS packing, and messages that hold more than one field are also unsupported. Decoding such messages
-> fails with an error; `grib2_index` can still list their metadata. See [supported data and limits](docs/OPERATIONS.md).
+> CONUS surface file: Lambert conformal, north polar stereographic and Mercator grids, with packing templates 5.0, 5.2
+> and 5.3. **Regular latitude/longitude grids, which GFS and many other GRIB2 files use, are not supported yet**, nor are
+> Gaussian grids (ECMWF), JPEG 2000 or CCSDS packing. Unsupported messages fail with an error; `grib2_index` can still
+> list their metadata. The [support matrix](docs/SUPPORT.md) shows exactly what works, what is refused on purpose, and
+> what is not done yet.
 >
 > **Use trusted files only.** The extension checks each message's structure before ecCodes decodes it, and the parsers
 > are fuzzed in CI, but ecCodes itself trusts its input and a decoder crash on a deliberately malformed file cannot be
@@ -89,8 +89,8 @@ remote-read details.
 ## Supported data
 
 Verified inputs are NBM forecast-hour-1 core products for CONUS, Alaska, Hawaii, Puerto Rico, and Guam, plus the HRRR
-CONUS surface file. Supported grids and packing templates are limited; unsupported data may be refused with an error.
-See [supported data and limits](docs/OPERATIONS.md) for the tested scope and limitations.
+CONUS surface file. Grids, packing templates and features are listed in the [support matrix](docs/SUPPORT.md), which
+marks each one as supported, refused on purpose, or not done yet. Anything outside it is refused with an error.
 
 ## Functions and documentation
 
@@ -102,7 +102,9 @@ See [supported data and limits](docs/OPERATIONS.md) for the tested scope and lim
 - [Function and column reference](docs/REFERENCE.md): every output column of `read_grib2` and `grib2_index`, where each
   value comes from, when it is NULL, and how `valid_time` is derived.
 - [Building from source](docs/BUILDING.md): dependencies, local builds, and tests.
-- [Supported data and limits](docs/OPERATIONS.md): verified formats, runtime settings, and input caveats.
+- [Support matrix](docs/SUPPORT.md): which grids, packing templates, data sources and features are supported, refused,
+  or still to do.
+- [Operations](docs/OPERATIONS.md): runtime settings, remote reads, `.idx` rules, and input caveats.
 - [Test data and coverage](test/README.md).
 
 ## License

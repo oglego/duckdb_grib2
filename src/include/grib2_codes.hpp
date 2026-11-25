@@ -215,7 +215,8 @@ inline std::unique_ptr<ProjectedGrid> BuildGrid(const GridSpec &s) {
 	return std::make_unique<MercatorGrid>(s.ni, s.nj, s.la1, s.lo1, s.lad, s.dx, s.dy, s.radius);
 }
 
-//! Build the grid described by a message's grid definition. Throws for grids that are not supported yet.
+//! Build the grid described by a message's grid definition. Throws for grids that are not supported yet. Update
+//! docs/SUPPORT.md when the grids, earth shapes or scan orders accepted here change.
 inline Grib2Grid MakeGrid(codes_handle *h, const char *function) {
 	GridSpec spec;
 	spec.type = Grib2KeyAsString(h, "gridType");

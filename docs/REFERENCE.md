@@ -1,7 +1,7 @@
 # Function and column reference
 
-This page lists what each function returns. For worked examples see the [README](../README.md); for supported data and
-limits see [OPERATIONS](OPERATIONS.md). The same function signatures are available in SQL with
+This page lists what each function returns. For worked examples see the [README](../README.md); for what is supported
+see the [support matrix](SUPPORT.md) and for runtime limits [OPERATIONS](OPERATIONS.md). The same function signatures are available in SQL with
 `SELECT * FROM duckdb_functions() WHERE function_name IN ('read_grib2', 'grib2_index');`.
 
 Two things decide most of what is filled in:

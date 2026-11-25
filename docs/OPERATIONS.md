@@ -1,24 +1,15 @@
-# Supported data and limits
+# Operations and limits
 
-This page describes the data combinations verified by the project and the main runtime limits. Other GRIB2 files may
-work, but have not been qualified. For SQL examples, see the [README](../README.md).
+This page describes the runtime limits, remote reads, `.idx` rules and input caveats. For which grids, packing templates,
+data sources and features are supported, see the [support matrix](SUPPORT.md). For SQL examples, see the
+[README](../README.md).
 
 ## Verified data and formats
 
-The current verified inputs are NBM forecast-hour-1 core products for CONUS, Alaska, Hawaii, Puerto Rico, and Guam, and
-the HRRR CONUS surface file `hrrr.t{HH}z.wrfsfcf00.grib2`.
-
-`read_grib2`, `grib2_message_info`, and `grib2_point_value` currently support:
-
-- Lambert conformal, north polar stereographic, and Mercator grids on a spherical earth. A Mercator grid must span less
-  than 180 degrees of longitude (every regional grid does); a wider one is refused.
-- The usual scan order: rows run west to east and south to north, optionally alternating row direction.
-- Packing templates 5.0 (simple), 5.2 (complex), and 5.3 (complex with spatial differencing).
-- One field per GRIB2 message.
-
-Other projections and scan orders are rejected. Regular latitude/longitude grids, ellipsoidal earths, south polar
-stereographic grids, JPEG 2000 and CCSDS packing, and multi-field messages are not supported. `grib2_index` can still
-list messages using unsupported grids or packing templates, but decoding them is refused.
+The verified inputs are NBM forecast-hour-1 core products for CONUS, Alaska, Hawaii, Puerto Rico, and Guam, and the HRRR
+CONUS surface file `hrrr.t{HH}z.wrfsfcf00.grib2`. Other GRIB2 files may work, but have not been qualified. Anything
+outside the [support matrix](SUPPORT.md) is refused with an error; `grib2_index` can still list the messages, but decoding
+them is refused.
 
 The extension accepts NOAA-style wgrib2 `.idx` inventories. Entries such as `n.m`, which represent several fields in one
 message, are not supported. The reference time (`d=`) must be digits forming a real calendar date, and numbers must not

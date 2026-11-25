@@ -3,7 +3,7 @@
 These scripts demonstrate reading HRRR surface-analysis GRIB2 files from the
 public NOAA S3 bucket with the DuckDB GRIB2 extension. They are active example
 and validation targets, but they are not yet part of the repository's formally
-supported meteorological data matrix.
+supported meteorological data matrix (see [docs/SUPPORT.md](../docs/SUPPORT.md)).
 
 ## Current examples
 
