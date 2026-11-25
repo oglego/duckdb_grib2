@@ -274,8 +274,9 @@ SELECT * FROM grib2_index('test/data/stale.grib2');
 belong to this file
 
 # How much of a sidecar is verified depends on the call (docs/OPERATIONS.md, "Remote files and the .idx sidecar").
-# stale_after_first.grib2.idx is right for message 1 and one byte off from message 3 on. The plain listing checks only
-# message 1, so it prints the inventory as written (this documents that behaviour on purpose)...
+# stale_after_first.grib2.idx is right for messages 1, 2 and 4 and one byte off for message 3. The plain listing checks
+# only the first and the last message, so it prints the inventory as written (this documents that behaviour on
+# purpose)...
 query II
 SELECT message_number, byte_offset FROM grib2_index('test/data/stale_after_first.grib2');
 ----
@@ -1134,3 +1135,102 @@ statement error
 SELECT * FROM read_grib2('test/data/trailing_bytes.grib2', all_cells := true);
 ----
 follow the last message
+
+# ---- A sidecar written for a file that has since changed size ---------------------------------------------------------------
+# grown_after_idx.grib2 is two real messages plus a trailing newline, with an .idx written before the newline was added
+# (test/data/generate_grown_after_idx_sample.py). The offsets are right, so message 1 checks out, but the last message's
+# length is the rest of the file, one byte more than the message is. The plain listing checks the last message too, so
+# it refuses the sidecar; so does details := true.
+statement error
+SELECT * FROM grib2_index('test/data/grown_after_idx.grib2');
+----
+belong to this file
+
+statement error
+SELECT * FROM grib2_index('test/data/grown_after_idx.grib2', details := true);
+----
+belong to this file
+
+# Without the sidecar the file is walked, and the stray byte is reported as trailing data
+statement error
+SELECT * FROM grib2_index('test/data/grown_after_idx.grib2', idx := false);
+----
+follow the last message
+
+# ---- valid_time in grib2_index ------------------------------------------------------------------------------------------------
+# From the .idx step, as in read_grib2: reference_time + step_hours. multi.grib2.idx has three 1-hour forecasts and an analysis.
+query ITT
+SELECT message_number, strftime(reference_time, '%Y-%m-%d %H:%M'), strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/multi.grib2') ORDER BY message_number;
+----
+1	2026-10-23 00:00	2026-10-23 01:00
+2	2026-10-23 00:00	2026-10-23 01:00
+3	2026-10-23 00:00	2026-10-23 01:00
+4	2026-01-01 00:00	2026-01-01 00:00
+
+# Without an .idx and without details nothing is read that could give it, so it is NULL...
+query I
+SELECT count(valid_time) FROM grib2_index('test/data/valid_times.grib2');
+----
+0
+
+# ...and with details := true it is the time ecCodes works out from the message, as in read_grib2 (minutes, days, 3-hour
+# units, an interval template, a leap day and a year boundary; test/data/generate_valid_times_sample.py)
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/valid_times.grib2', details := true) ORDER BY message_number;
+----
+1	2026-06-02 01:30
+2	2026-06-03 00:00
+3	2026-06-02 06:00
+4	2026-06-02 06:00
+5	2026-06-02 06:00
+6	2026-06-03 00:00
+7	2028-02-29 01:00
+8	2027-01-01 00:30
+
+# ---- A reference time that is not a run time -----------------------------------------------------------------------------------
+# reference_significance.grib2 (test/data/generate_reference_significance_sample.py): significance 1 (start of forecast) and
+# 0 (analysis) give a valid time; 2 (verifying time) and 3 (observation time) do not, because ecCodes would still add the
+# forecast time to a time that is not the start of a forecast. reference_time is reported either way.
+query ITT
+SELECT message_number, strftime(reference_time, '%Y-%m-%d %H:%M'), strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('test/data/reference_significance.grib2', points := [{'lat': 38.5, 'lon': -97.5}]) ORDER BY message_number;
+----
+1	2026-06-02 00:00	2026-06-02 06:00
+2	2026-06-02 00:00	2026-06-02 00:00
+3	2026-06-02 00:00	NULL
+4	2026-06-02 00:00	NULL
+
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/reference_significance.grib2', details := true) ORDER BY message_number;
+----
+1	2026-06-02 06:00
+2	2026-06-02 00:00
+3	NULL
+4	NULL
+
+# With an .idx that gives a step for every message, read_grib2 still returns NULL for 3 and 4: the step in the inventory
+# cannot be trusted either
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('test/data/reference_significance_with_idx.grib2', points := [{'lat': 38.5, 'lon': -97.5}]) ORDER BY message_number;
+----
+1	2026-06-02 06:00
+2	2026-06-02 00:00
+3	NULL
+4	NULL
+
+# The plain listing never opens the messages, so it can only repeat the sidecar (6 hours for message 3); details := true
+# reads the reference-time significance and gives NULL
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/reference_significance_with_idx.grib2') ORDER BY message_number;
+----
+1	2026-06-02 06:00
+2	2026-06-02 00:00
+3	2026-06-02 06:00
+4	2026-06-02 00:00
+
+query IT
+SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/reference_significance_with_idx.grib2', details := true) ORDER BY message_number;
+----
+1	2026-06-02 06:00
+2	2026-06-02 00:00
+3	NULL
+4	NULL

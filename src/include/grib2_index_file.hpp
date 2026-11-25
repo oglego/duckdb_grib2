@@ -34,6 +34,9 @@ struct Grib2IndexRow {
 	optional<std::string> qualifier;
 	optional<std::string> inventory;
 	optional<int64_t> step_hours;
+	//! reference_time + step_hours when the inventory has a step; with details, otherwise the time ecCodes works out
+	//! from the message (nothing when the reference time is not a run time, see Grib2ReferenceTimeIsRunTime)
+	optional<timestamp_t> valid_time;
 	optional<double> percentile;
 	optional<double> threshold_lower;
 	optional<double> threshold_upper;
@@ -127,12 +130,13 @@ optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int 
 //! otherwise hops through the file using the length in each indicator section. With `details`, also reads a short
 //! prefix of each message and asks ecCodes for names, level and grid details.
 //!
-//! verify_first_message checks the first message against the sidecar (every message when `details` is set), which
-//! costs one read; callers that validate each message as they read it can turn it off.
+//! verify_ends checks the first and the last message against the sidecar (every message when `details` is set), which
+//! costs two reads (the first and the last message catch a sidecar written for another version of the file, or a file
+//! that changed size); callers that validate each message as they read it can turn it off.
 //!
 //! When `context` is given, a cancelled query stops between messages.
 void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows,
-               bool verify_first_message = true, ClientContext *context = nullptr);
+               bool verify_ends = true, ClientContext *context = nullptr);
 
 //! Index several files, up to max_parallel at a time. Reading the index of a remote file is mostly waiting for round
 //! trips, so doing several at once is much faster than one after another. The result has one entry per path, in the
@@ -141,7 +145,7 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 //! thread is started and everything runs on the calling thread. When `context` is given, a cancelled query stops
 //! between messages.
 std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::vector<std::string> &paths, bool use_idx,
-                                                   bool details, bool verify_first_message, idx_t max_parallel,
+                                                   bool details, bool verify_ends, idx_t max_parallel,
                                                    ClientContext *context = nullptr);
 
 } // namespace duckdb

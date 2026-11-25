@@ -88,6 +88,7 @@ unique_ptr<FunctionData> Grib2IndexBind(ClientContext &context, TableFunctionBin
 	    {"qualifier", LogicalType::VARCHAR},
 	    {"inventory", LogicalType::VARCHAR},
 	    {"step_hours", LogicalType::BIGINT},
+	    {"valid_time", LogicalType::TIMESTAMP},
 	    {"percentile", LogicalType::DOUBLE},
 	    {"threshold_lower", LogicalType::DOUBLE},
 	    {"threshold_upper", LogicalType::DOUBLE},
@@ -149,6 +150,7 @@ void Grib2IndexScan(ClientContext &context, TableFunctionInput &data, DataChunk 
 		auto qualifier = FlatVector::Writer<string_t>(output.data[c++], count);
 		auto inventory = FlatVector::Writer<string_t>(output.data[c++], count);
 		auto step_hours = FlatVector::Writer<int64_t>(output.data[c++], count);
+		auto valid_time = FlatVector::Writer<timestamp_t>(output.data[c++], count);
 		auto percentile = FlatVector::Writer<double>(output.data[c++], count);
 		auto threshold_lower = FlatVector::Writer<double>(output.data[c++], count);
 		auto threshold_upper = FlatVector::Writer<double>(output.data[c++], count);
@@ -179,6 +181,7 @@ void Grib2IndexScan(ClientContext &context, TableFunctionInput &data, DataChunk 
 			WriteOptionalString(qualifier, row.qualifier);
 			WriteOptionalString(inventory, row.inventory);
 			WriteOptional(step_hours, row.step_hours);
+			WriteOptional(valid_time, row.valid_time);
 			WriteOptional(percentile, row.percentile);
 			WriteOptional(threshold_lower, row.threshold_lower);
 			WriteOptional(threshold_upper, row.threshold_upper);

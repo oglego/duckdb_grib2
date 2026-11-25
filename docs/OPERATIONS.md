@@ -71,7 +71,7 @@ How much of a sidecar is checked against the file depends on the call:
 
 | Call | What is verified against the message headers |
 |---|---|
-| `grib2_index(file)` | The first message only. The other rows are listed as the `.idx` gives them, so one wrong offset after message 1 is not noticed. This keeps the listing to one small read. |
+| `grib2_index(file)` | The first and the last message. The last message's length is the rest of the file, so this catches a sidecar written for another version of the file, or a file that has grown or shrunk. The rows in between are listed as the `.idx` gives them, so one wrong offset in the middle is not noticed. Two small reads. |
 | `grib2_index(file, details := true)` | Every message: its length must match what the `.idx` implies. |
 | `read_grib2` | Every message it reads, before decoding it. |
 

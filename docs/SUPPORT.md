@@ -77,12 +77,11 @@ Other message-level rules:
 | Files without an `.idx` | ✅ | Walked message by message. Empty files, truncated messages and trailing bytes are errors. |
 | Local files, `http(s)://`, `s3://` (via httpfs) | ✅ | A 403 on a missing `.idx` is read as "no sidecar". |
 | Background prefetch (`grib2_io_threads`) | ✅ | |
-| `valid_time` | ✅ | From the `.idx` step when it has one, otherwise from the message. |
+| `valid_time` | ✅ | From the `.idx` step when it has one, otherwise from the message. NULL when the reference time is not a run time (significance other than 0 or 1). In `read_grib2` and, with `details := true`, in `grib2_index`. |
 | Scalar functions on BLOBs (`grib2_message_info`, `grib2_point_value`) | ✅ | |
 | Parallel decoding of one message | ❌ | Decoding is single-threaded. |
 | Column or filter pushdown | ❌ | All columns are produced even for `count(*)`. |
 | Skip decoding when no cells are selected | ❌ | A message is fully decoded even if a point falls outside the grid. |
-| `valid_time` column in `grib2_index` | ❌ | Only `read_grib2` has it. |
 
 ## Platforms
 

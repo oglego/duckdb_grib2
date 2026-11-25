@@ -60,6 +60,7 @@ One row per message, without decoding any values. `path` may be a glob. `idx := 
 | `variable`, `level`, `forecast`, `qualifier` | VARCHAR | `.idx` | The four parts of the inventory line. NULL without an `.idx`; `qualifier` is empty when the line has none. |
 | `inventory` | VARCHAR | `.idx` | `variable:level:forecast`, plus `:qualifier` when there is one. This is the text `search` matches. NULL without an `.idx`. Not unique within a file, so `message_number` is the key. |
 | `step_hours` | BIGINT | `.idx` | Hours from `reference_time` to the time the field is valid, see [Forecast steps](#forecast-steps). |
+| `valid_time` | TIMESTAMP | `.idx`, ecCodes (`details := true`) | `reference_time` plus `step_hours` when the `.idx` gives a step. With `details := true` it is otherwise the time ecCodes works out from the message. NULL for a plain listing with no step to go on. Same meaning as in `read_grib2`, see [Forecast steps](#forecast-steps). |
 | `percentile` | DOUBLE | `.idx` | `N` for a qualifier of the form `N% level`, otherwise NULL. |
 | `threshold_lower`, `threshold_upper` | DOUBLE | `.idx` | Bounds of a probability qualifier: `prob >N` sets the lower, `prob <N` the upper, and `prob >=A <B` both. NULL otherwise. |
 | `discipline`, `parameter_category`, `parameter_number` | INTEGER | message headers | The GRIB2 parameter identifiers. |
@@ -75,8 +76,8 @@ will ever decode is still listed, but its ecCodes columns stay NULL.
 
 ## Forecast steps
 
-`step_hours` comes from the `forecast` text of the `.idx` line. `valid_time` in `read_grib2` is `reference_time + step_hours`
-when the inventory gives a step, and otherwise the valid time ecCodes derives from the message itself (see below).
+`step_hours` comes from the `forecast` text of the `.idx` line. `valid_time` in `read_grib2` and `grib2_index` is
+`reference_time + step_hours` when the inventory gives a step, and otherwise the valid time ecCodes derives from the message itself (see below).
 
 | `forecast` text | `step_hours` | `valid_time` |
 |---|---:|---|
@@ -97,6 +98,13 @@ valid time has no seconds). `step_hours` is still NULL in these cases: it is an 
 The inventory wins when it gives a step, so `valid_time` always agrees with the `step_hours` shown beside it. For files
 from NOAA the two agree, because the inventory is written from the same messages. If the time cannot be worked out
 (a product template or time unit ecCodes does not support), `valid_time` is NULL.
+
+`valid_time` is also NULL when section 1 says the reference time is not the start of a forecast. Only significance 0
+(analysis) and 1 (start of forecast) make "reference time plus forecast time" the valid time; for 2 (verifying time of
+forecast), 3 (observation time) and the local-use values ecCodes would still add the forecast time and get a wrong answer,
+so the extension gives NULL, even if the `.idx` has a step. `reference_time` is still reported. This is checked whenever
+the message is opened: in `read_grib2` and in `grib2_index(..., details := true)`. A plain `grib2_index` listing never
+opens the messages, so it can only repeat the `.idx`.
 
 ## Helper functions
 

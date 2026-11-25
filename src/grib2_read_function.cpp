@@ -318,6 +318,8 @@ struct Grib2ReadGlobalState : public GlobalTableFunctionState {
 	//! The valid time ecCodes derives from each message (microseconds since the epoch), filled in as each is loaded.
 	//! Used when the .idx gives no step, or there is no .idx.
 	std::vector<optional<int64_t>> message_valid_times;
+	//! Whether each message's reference time is a run time. If not, valid_time is NULL even when the .idx gave a step.
+	std::vector<bool> reference_is_run_time;
 
 	idx_t message_position = 0;
 	FileSystem *fs = nullptr;
@@ -404,6 +406,7 @@ unique_ptr<GlobalTableFunctionState> Grib2ReadInit(ClientContext &context, Table
 	}
 	state->short_names.resize(state->messages.size());
 	state->message_valid_times.resize(state->messages.size());
+	state->reference_is_run_time.assign(state->messages.size(), true);
 	return state;
 }
 
@@ -482,7 +485,11 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 			grib_grid = MakeGrid(h, function);
 			state.field = DecodeValues(h, function, grib_grid.grid->Ni() * grib_grid.grid->Nj());
 			state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
-			state.message_valid_times[state.message_position] = Grib2ValidTimeMicros(h);
+			const bool run_time = Grib2ReferenceTimeIsRunTime(h);
+			state.reference_is_run_time[state.message_position] = run_time;
+			if (run_time) {
+				state.message_valid_times[state.message_position] = Grib2ValidTimeMicros(h);
+			}
 		}
 		const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
 		state.alternative_rows = grib_grid.spec.alternative_rows;
@@ -617,7 +624,10 @@ void Grib2ReadScan(ClientContext &context, TableFunctionInput &data, DataChunk &
 			WriteString(file_path, message.file_path);
 			message_number.WriteValue(message.message_number);
 			WriteOptional(reference_time, message.reference_time);
-			if (message.reference_time && message.step_hours) {
+			if (!state.reference_is_run_time[row.message_index]) {
+				// The reference time is a verifying or observation time, so adding a forecast time to it is wrong
+				valid_time.WriteNull();
+			} else if (message.reference_time && message.step_hours) {
 				// The inventory's step, when it has one (this is what step_hours reports)
 				valid_time.WriteValue(timestamp_t(message.reference_time->value + *message.step_hours * 3600000000LL));
 			} else if (state.message_valid_times[row.message_index]) {

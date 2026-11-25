@@ -13,6 +13,7 @@
 #include "grib2_codes.hpp"
 #include "grib2_idx.hpp"
 #include "grib2_message.hpp"
+#include "grib2_valid_time.hpp"
 
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/types/time.hpp"
@@ -114,6 +115,16 @@ static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const
 	if (alternative_rows) {
 		row.alternative_row_scanning = *alternative_rows != 0;
 	}
+	// valid_time: the inventory's step when it gave one, otherwise the time ecCodes works out from the message. A
+	// reference time that is not a run time gives no valid time, whichever way it was worked out.
+	if (!Grib2ReferenceTimeIsRunTime(h)) {
+		row.valid_time.reset();
+	} else if (!row.valid_time) {
+		const std::optional<int64_t> micros = Grib2ValidTimeMicros(h);
+		if (micros) {
+			row.valid_time = timestamp_t(*micros);
+		}
+	}
 }
 
 [[noreturn]] static void ThrowBadMessage(const std::string &path, int64_t message_number, int64_t offset,
@@ -123,7 +134,7 @@ static void FillDetails(Grib2IndexRow &row, const MessageSummary &summary, const
 }
 
 void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool details, std::vector<Grib2IndexRow> &rows,
-               bool verify_first_message, ClientContext *context) {
+               bool verify_ends, ClientContext *context) {
 	const FileReader file(fs, path);
 	const std::string idx_path = path + ".idx";
 	// A zero-byte file is not a GRIB file with no messages: it is usually a download that failed, and an empty result
@@ -162,13 +173,18 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 			row.qualifier = entry.qualifier;
 			row.inventory = entry.Inventory();
 			row.step_hours = entry.step_hours;
+			if (row.reference_time && row.step_hours) {
+				row.valid_time = timestamp_t(row.reference_time->value + *row.step_hours * 3600000000LL);
+			}
 			row.percentile = entry.percentile;
 			row.threshold_lower = entry.threshold_lower;
 			row.threshold_upper = entry.threshold_upper;
 
 			// A sidecar that does not belong to the file would silently give wrong offsets, so check it against the
-			// message itself: every message with details, otherwise just the first one.
-			if (details || (verify_first_message && i == 0)) {
+			// messages themselves: every message with details, otherwise the first and the last. The last message's
+			// length is the rest of the file, so it also catches a file that has grown or shrunk since the sidecar was
+			// written. A wrong entry in between is only found when that message is read (read_grib2 always does).
+			if (details || (verify_ends && (i == 0 || i + 1 == entries.size()))) {
 				MessageSummary summary;
 				std::string prefix;
 				if (!ReadSections(file, entry.byte_offset, entry.byte_length, summary, prefix, error)) {
@@ -232,7 +248,7 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 }
 
 std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::vector<std::string> &paths, bool use_idx,
-                                                   bool details, bool verify_first_message, idx_t max_parallel,
+                                                   bool details, bool verify_ends, idx_t max_parallel,
                                                    ClientContext *context) {
 	std::vector<std::vector<Grib2IndexRow>> results(paths.size());
 	std::vector<std::exception_ptr> errors(paths.size());
@@ -244,7 +260,7 @@ std::vector<std::vector<Grib2IndexRow>> IndexFiles(FileSystem &fs, const std::ve
 				return;
 			}
 			try {
-				IndexFile(fs, paths[i], use_idx, details, results[i], verify_first_message, context);
+				IndexFile(fs, paths[i], use_idx, details, results[i], verify_ends, context);
 			} catch (...) {
 				errors[i] = std::current_exception();
 			}

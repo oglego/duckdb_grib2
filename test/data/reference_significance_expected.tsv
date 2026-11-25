@@ -1,0 +1,5 @@
+message_number	significance	valid_time_utc
+1	1	2026-06-02 06:00
+2	0	2026-06-02 00:00
+3	2	NULL
+4	3	NULL

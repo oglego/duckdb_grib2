@@ -318,6 +318,18 @@ def _centre(ref):
 
 
 @pytest.mark.parametrize("name", ["co", "co_complex", "ak", "hi", "pr", "gu"])
+def test_index_valid_time_with_details_matches_herbie(name, grid, rg):
+    """grib2_index(details := true) has a valid_time column with the same meaning as in read_grib2."""
+    ref, path = grid(name)
+    assert not Path(path + ".idx").exists()
+    df = rg.sql(f"SELECT valid_time FROM grib2_index({sql_str(path)}, details := true)")
+    assert len(df) == 1 and pd.Timestamp(df["valid_time"][0]) == ref.valid_time
+    # a plain listing of a file with no sidecar opens no message, so there is nothing to derive it from
+    plain = rg.sql(f"SELECT valid_time FROM grib2_index({sql_str(path)})")
+    assert len(plain) == 1 and plain["valid_time"].isna().all()
+
+
+@pytest.mark.parametrize("name", ["co", "co_complex", "ak", "hi", "pr", "gu"])
 def test_valid_time_without_a_sidecar_comes_from_the_message(name, grid, rg):
     ref, path = grid(name)
     assert not Path(path + ".idx").exists()

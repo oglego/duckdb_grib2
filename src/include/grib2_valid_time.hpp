@@ -45,6 +45,18 @@ inline std::optional<int64_t> Grib2MakeMicros(int64_t year, int month, int day, 
 	return seconds * 1000000;
 }
 
+//! Whether section 1's reference time is the time a forecast starts (code table 1.2 values 0, analysis, and 1, start of
+//! forecast), which is what makes "reference time plus forecast time" the valid time. For 2 (verifying time of
+//! forecast), 3 (observation time) and the local-use values the reference time means something else, ecCodes still adds
+//! the forecast time to it, and the sum would be wrong; those messages get no valid time rather than a wrong one.
+inline bool Grib2ReferenceTimeIsRunTime(codes_handle *handle) {
+	long significance = -1;
+	if (codes_get_long(handle, "significanceOfReferenceTime", &significance) != CODES_SUCCESS) {
+		return false;
+	}
+	return significance == 0 || significance == 1;
+}
+
 //! The valid time of the field in microseconds since the epoch, to the minute (validityTime has no seconds), or nothing
 //! when ecCodes cannot work it out for this product template or reports a date that does not exist.
 inline std::optional<int64_t> Grib2ValidTimeMicros(codes_handle *handle) {
