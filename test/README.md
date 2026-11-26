@@ -42,7 +42,7 @@ Tests use paths relative to the repository root, so run them from there.
 
 `make test` needs Python 3.10 or newer (it calls DuckDB's `run_tests.py`). Otherwise run the binary directly:
 ```bash
-./build/release/test/unittest "test/*"
+./build/release/test/unittest "test/sql/*"
 ```
 
 ## Robustness and fuzzing
