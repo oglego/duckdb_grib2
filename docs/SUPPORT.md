@@ -70,7 +70,7 @@ Other message-level rules:
 | Feature | Status | Notes |
 |---|---|---|
 | Nearest-cell lookup for points | ✅ | |
-| Bounding-box selection (incl. across the antimeridian) | ✅ | |
+| Bounding-box selection (incl. across the antimeridian) | ✅ | A box with `lon_max < lon_min` needs `wrap := true`. |
 | Every cell of a grid (`all_cells`) | ✅ | About 27 s for 324M rows. |
 | Missing values as SQL `NULL` | ✅ | NaN is used internally, so a real value of 9999 survives. |
 | NOAA `.idx` inventories (`search`, `message`) | ✅ | `n.m` entries are not supported. |

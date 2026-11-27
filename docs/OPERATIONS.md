@@ -75,6 +75,11 @@ How much of a sidecar is checked against the file depends on the call:
 | `grib2_index(file, details := true)` | Every message: its length must match what the `.idx` implies. |
 | `read_grib2` | Every message it reads, before decoding it. |
 
+In every case the check covers the message length and the reference time: the `d=` time in the `.idx` must equal the
+reference time in the message's own section 1 (to the minute). Matching lengths alone cannot tell that a sidecar belongs to
+another run of the same file, because messages of constant or fixed-size-packed fields are the same size from run to run.
+The variable, level and forecast text is not compared with the message.
+
 Use `details := true` to audit a sidecar, or whenever a wrong inventory would matter more than the extra reads (one per
 message, which adds up on a remote file).
 

@@ -126,6 +126,16 @@ private:
 
 optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int minute, int second);
 
+struct MessageSummary;
+
+//! Check that the reference time an .idx entry gives (to the minute) is the one in the message's own section 1. The
+//! .idx supplies the variable, level, forecast and valid_time, so a sidecar written for a different run of the same
+//! file name would label the wrong data; matching message lengths alone do not rule that out (constant fields and
+//! fixed-size packing give equal lengths from run to run). Returns false and sets `error` on a mismatch. Does nothing
+//! when either time is unavailable.
+bool CheckIdxReferenceTime(const MessageSummary &summary, const optional<timestamp_t> &idx_reference_time,
+                           std::string &error);
+
 //! Index every message in one file, appending to `rows`. Uses the ".idx" sidecar when use_idx is true and one exists,
 //! otherwise hops through the file using the length in each indicator section. With `details`, also reads a short
 //! prefix of each message and asks ecCodes for names, level and grid details.

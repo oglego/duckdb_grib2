@@ -40,6 +40,19 @@ optional<timestamp_t> MakeTimestamp(int year, int month, int day, int hour, int 
 	return Timestamp::FromDatetime(date, Time::FromTime(hour, minute, second));
 }
 
+bool CheckIdxReferenceTime(const MessageSummary &summary, const optional<timestamp_t> &idx_reference_time,
+                           std::string &error) {
+	// The .idx records the time to the minute, so seconds in section 1 are left out of the comparison
+	const optional<timestamp_t> message_time =
+	    MakeTimestamp(summary.year, summary.month, summary.day, summary.hour, summary.minute, 0);
+	if (!idx_reference_time || !message_time || idx_reference_time->value == message_time->value) {
+		return true;
+	}
+	error = "the message's reference time is " + Timestamp::ToString(*message_time) + " but the .idx says " +
+	        Timestamp::ToString(*idx_reference_time) + " (does the .idx belong to this file?)";
+	return false;
+}
+
 //! Read the section headers of the message at `offset`. Starts with a short prefix and grows it as the parser asks.
 //! known_length is the message length when it is already known, or -1. On success `prefix` holds the bytes read.
 static bool ReadSections(const FileReader &file, int64_t offset, int64_t known_length, MessageSummary &summary,

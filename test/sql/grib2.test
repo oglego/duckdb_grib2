@@ -36,7 +36,7 @@ ORDER BY function_name;
 grib2_index	path,idx,details
 grib2_message_info	blob
 grib2_point_value	blob,lat,lon
-read_grib2	path,message,search,points,bbox,all_cells
+read_grib2	path,message,search,points,bbox,all_cells,wrap
 
 # Parameter types stay aligned with the parameter names
 query TT
@@ -46,7 +46,7 @@ WHERE function_name IN ('grib2_index', 'read_grib2')
 ORDER BY function_name;
 ----
 grib2_index	VARCHAR,BOOLEAN,BOOLEAN
-read_grib2	VARCHAR,ANY,VARCHAR,ANY,ANY,BOOLEAN
+read_grib2	VARCHAR,ANY,VARCHAR,ANY,ANY,BOOLEAN,BOOLEAN
 
 # Decode spike: decode one GRIB2 message (complex packing with spatial differencing)
 # from an in-memory blob. This confirms ecCodes definitions and the packing codec work.
@@ -692,7 +692,7 @@ false	lambert	1799
 
 # A bbox longitude may be written with a multiple of 360 added: [300, -150] is [-60, 210], and both cover the whole Guam grid
 query II
-SELECT count(*), count(DISTINCT (i, j)) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -150, 30]);
+SELECT count(*), count(DISTINCT (i, j)) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -150, 30], wrap := true);
 ----
 37249	37249
 
@@ -702,7 +702,7 @@ SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [-60, 0, 21
 37249
 
 query I
-SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -100, 30]);
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [300, 0, -100, 30], wrap := true);
 ----
 37249
 
@@ -845,7 +845,7 @@ SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [0, 0, 'inf'::DOUBLE,
 bbox coordinates must be finite
 
 query I
-SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [660, 0, 570, 30]);
+SELECT count(*) FROM read_grib2('fixtures/nbm_gu_msg.grib2', bbox := [660, 0, 570, 30], wrap := true);
 ----
 37249
 
@@ -991,13 +991,14 @@ SELECT message_number, forecast, step_hours FROM grib2_index('test/data/interval
 4	15 min fcst	NULL
 
 # Message 4 ("15 min fcst") has no step in the inventory, so its valid time comes from the message instead: the message is a
-# forecast hour 0 field of the 2026-06-02 run (the inventory above is synthetic and does not describe the data).
+# forecast hour 0 field of the 2026-06-02 run (the inventory's labels are synthetic and do not describe the data, but its
+# reference time is the message's own).
 query IT
 SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM read_grib2('test/data/interval_steps.grib2', points := [{'lat': 38.5, 'lon': -97.5}]) ORDER BY message_number;
 ----
-1	2026-10-23 06:00
-2	2026-10-23 12:00
-3	2026-10-23 02:00
+1	2026-06-02 06:00
+2	2026-06-02 12:00
+3	2026-06-02 02:00
 4	2026-06-02 00:00
 
 # The scalar functions run on several threads at once when a query has several pipelines: the branches of a UNION ALL run
@@ -1234,3 +1235,58 @@ SELECT message_number, strftime(valid_time, '%Y-%m-%d %H:%M') FROM grib2_index('
 2	2026-06-02 00:00
 3	NULL
 4	NULL
+
+# A bbox whose lon_max is less than its lon_min runs east through the antimeridian. That is also what swapped longitudes
+# look like, and it selects nearly every cell, so it is refused unless wrap := true asks for it. The error gives the width.
+statement error
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.2, 37, -93.4, 38]);
+----
+span 359.8
+
+# The same longitudes in the right order select a small box, and wrap := true keeps the old meaning of the swapped box
+query I
+SELECT count(*) BETWEEN 100 AND 1000 FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.4, 37, -93.2, 38]);
+----
+true
+
+query I
+SELECT count(*) > 100000 FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.2, 37, -93.4, 38], wrap := true);
+----
+true
+
+# wrap := true on a box that does not cross the antimeridian changes nothing
+query I
+SELECT (SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.4, 37, -93.2, 38], wrap := true)) =
+       (SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.4, 37, -93.2, 38]));
+----
+true
+
+# wrap is about bbox only
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', all_cells := true, wrap := true);
+----
+wrap := true only applies to bbox
+
+statement error
+SELECT * FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [-93.4, 37, -93.2, 38], wrap := NULL);
+----
+wrap cannot be NULL
+
+# An .idx whose offsets and lengths fit the file but whose reference time is not the message's was written for another run:
+# its labels and valid_time would describe the wrong data, so it is refused (wrong_reference_time.grib2 comes from
+# test/data/generate_wrong_reference_time_sample.py).
+statement error
+SELECT * FROM read_grib2('test/data/wrong_reference_time.grib2', all_cells := true);
+----
+reference time is 2026-06-02 00:00:00 but the .idx says 2020-01-01 00:00:00
+
+statement error
+SELECT * FROM grib2_index('test/data/wrong_reference_time.grib2');
+----
+reference time is 2026-06-02 00:00:00 but the .idx says 2020-01-01 00:00:00
+
+# Without the sidecar the file is still readable: the reference time then comes from the message
+query I
+SELECT strftime(reference_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/wrong_reference_time.grib2', idx := false);
+----
+2026-06-02 00:00

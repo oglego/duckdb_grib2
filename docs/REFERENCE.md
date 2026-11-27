@@ -14,12 +14,13 @@ Two things decide most of what is filled in:
 ## `read_grib2`
 
 ```sql
-read_grib2(path, message := NULL, search := NULL, points := NULL, bbox := NULL, all_cells := false)
+read_grib2(path, message := NULL, search := NULL, points := NULL, bbox := NULL, all_cells := false, wrap := false)
 ```
 
 Decodes the selected messages into one row per selected grid cell. Choose cells with exactly one of `points` (the
 nearest cell to each point), `bbox` (every cell whose centre is inside `[lon_min, lat_min, lon_max, lat_max]`) or
-`all_cells := true`. Choose messages with `message` (message numbers) and/or `search` (a regular expression matched
+`all_cells := true`. A `bbox` with `lon_max < lon_min` runs east through the antimeridian; because a swapped pair of
+longitudes looks the same and selects almost every cell, that box is refused unless you add `wrap := true`. Choose messages with `message` (message numbers) and/or `search` (a regular expression matched
 against the `.idx` inventory text).
 
 | Column | Type | Meaning |

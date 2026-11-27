@@ -95,7 +95,7 @@ marks each one as supported, refused on purpose, or not done yet. Anything outsi
 ## Functions and documentation
 
 - `grib2_index(path, idx := true, details := false)` lists message inventory and metadata.
-- `read_grib2(path, message := ..., search := ..., points := ..., bbox := ..., all_cells := false)` decodes selected
+- `read_grib2(path, message := ..., search := ..., points := ..., bbox := ..., wrap := false, all_cells := false)` decodes selected
   values at points, within a bounding box, or across a grid.
 - BLOB helpers: `grib2_eccodes_version`, `grib2_message_info`, and `grib2_point_value`.
 

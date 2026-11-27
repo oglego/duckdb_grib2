@@ -65,6 +65,8 @@ def read_grib2_sql(
         args.append("points := " + points_literal(points))
     if bbox is not None:
         args.append("bbox := [" + ", ".join(_num(b) for b in bbox) + "]")
+        if bbox[2] < bbox[0]:
+            args.append("wrap := true")  # lon_max < lon_min is a box through the antimeridian, which must be asked for
     if all_cells:
         args.append("all_cells := true")
     q = f"SELECT {select} FROM read_grib2({', '.join(args)})"

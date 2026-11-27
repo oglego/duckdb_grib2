@@ -45,7 +45,8 @@
 //                    regular expression matched against the .idx inventory text; needs the sidecar).
 //   Which cells:     exactly one of
 //                      points := [{'lat': 37.21, 'lon': -93.29}, ...]  nearest grid cell to each point
-//                      bbox := [lon_min, lat_min, lon_max, lat_max]    every cell centre inside the box
+//                      bbox := [lon_min, lat_min, lon_max, lat_max]    every cell centre inside the box; lon_max <
+//                                                                      lon_min needs wrap := true
 //                      all_cells := true                               the whole grid (3.7 million rows per CONUS
 //                      message)
 //
@@ -73,6 +74,9 @@ struct Grib2ReadBindData : public TableFunctionData {
 	SpatialMode mode = SpatialMode::ALL_CELLS;
 	std::vector<QueryPoint> points;
 	double bbox[4] = {0, 0, 0, 0}; // lon_min, lat_min, lon_max, lat_max
+	//! The box may run east through the antimeridian (lon_max < lon_min). Opt-in: otherwise a swapped pair of
+	//! longitudes would silently select almost the whole globe.
+	bool bbox_wrap = false;
 };
 
 double ToDouble(const Value &value, const std::string &what) {
@@ -181,8 +185,17 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 	result->pattern = StringValue::Get(input.inputs[0]);
 
 	int modes = 0;
+	bool wrap_given = false;
 	for (auto &parameter : input.named_parameters) {
 		const Value &value = parameter.second;
+		if (parameter.first == "wrap") {
+			if (value.IsNull()) {
+				throw InvalidInputException("read_grib2: wrap cannot be NULL");
+			}
+			result->bbox_wrap = BooleanValue::Get(value);
+			wrap_given = result->bbox_wrap;
+			continue;
+		}
 		if (parameter.first == "all_cells") {
 			if (value.IsNull()) {
 				throw InvalidInputException("read_grib2: all_cells cannot be NULL");
@@ -237,6 +250,22 @@ unique_ptr<FunctionData> Grib2ReadBind(ClientContext &context, TableFunctionBind
 	}
 	if (modes > 1) {
 		throw InvalidInputException("read_grib2: choose only one of points, bbox and all_cells");
+	}
+
+	if (wrap_given && result->mode != SpatialMode::BBOX) {
+		throw InvalidInputException("read_grib2: wrap := true only applies to bbox");
+	}
+	if (result->mode == SpatialMode::BBOX && !result->bbox_wrap && result->bbox[2] < result->bbox[0]) {
+		// lon_max < lon_min is a legitimate box across the antimeridian, but it is also what a swapped pair of
+		// longitudes looks like, and the result (nearly every cell) is slow and wrong. Ask for it explicitly.
+		double width = result->bbox[2] - result->bbox[0];
+		width -= 360.0 * std::floor(width / 360.0);
+		throw InvalidInputException("read_grib2: bbox lon_max (" + std::to_string(result->bbox[2]) +
+		                            ") is less than lon_min (" + std::to_string(result->bbox[0]) +
+		                            "), so the box would run east through the antimeridian and span " +
+		                            std::to_string(width) +
+		                            " degrees of longitude. The order is [lon_min, lat_min, lon_max, lat_max]; "
+		                            "if you mean a box that crosses the antimeridian, add wrap := true");
 	}
 
 	const std::vector<std::pair<const char *, LogicalType>> columns = {
@@ -475,6 +504,17 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 			                            " bytes but the index says " + std::to_string(row.byte_length) +
 			                            " (does the .idx belong to this file?)");
 		}
+		// The .idx supplies the labels and valid_time, and equal lengths do not prove it describes this file (a rerun
+		// can produce messages of the same size), so check the reference time against the message's own
+		if (row.inventory) {
+			MessageSummary summary;
+			std::string summary_error;
+			if (ParseMessageSections(reinterpret_cast<const uint8_t *>(bytes.data()), bytes.size(), summary, needed,
+			                         summary_error) == SectionParseResult::OK &&
+			    !CheckIdxReferenceTime(summary, row.reference_time, summary_error)) {
+				throw InvalidInputException(summary_error);
+			}
+		}
 		Grib2Grid grib_grid;
 		{
 			// Only the ecCodes work is inside the guard: not the file read above or the cell selection below
@@ -669,6 +709,7 @@ void RegisterGrib2ReadFunction(ExtensionLoader &loader) {
 	signature.AddKeywordOnly("points", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("bbox", LogicalType::ANY, Value());
 	signature.AddKeywordOnly("all_cells", LogicalType::BOOLEAN, Value::BOOLEAN(false));
+	signature.AddKeywordOnly("wrap", LogicalType::BOOLEAN, Value::BOOLEAN(false));
 
 	// The bare loader.RegisterFunction(TableFunction) overload cannot carry documentation. The CreateInfo form can, but
 	// it must ask for ALTER_ON_CONFLICT itself: that is what the bare overload sets, while the default is
@@ -677,9 +718,9 @@ void RegisterGrib2ReadFunction(ExtensionLoader &loader) {
 	info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
 
 	FunctionDescription description;
-	description.parameter_types = {LogicalType::VARCHAR, LogicalType::ANY, LogicalType::VARCHAR,
-	                               LogicalType::ANY,     LogicalType::ANY, LogicalType::BOOLEAN};
-	description.parameter_names = {"path", "message", "search", "points", "bbox", "all_cells"};
+	description.parameter_types = {LogicalType::VARCHAR, LogicalType::ANY,     LogicalType::VARCHAR, LogicalType::ANY,
+	                               LogicalType::ANY,     LogicalType::BOOLEAN, LogicalType::BOOLEAN};
+	description.parameter_names = {"path", "message", "search", "points", "bbox", "all_cells", "wrap"};
 	description.description = "Decodes GRIB2 messages into one row per selected cell, at the nearest grid cell to each "
 	                          "point, inside a bounding box, or across the whole grid, with cells masked by a bitmap "
 	                          "returned as NULL.";
