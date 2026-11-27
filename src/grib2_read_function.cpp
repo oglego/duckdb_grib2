@@ -475,6 +475,43 @@ void FillPrefetch(Grib2ReadGlobalState &state) {
 }
 
 //! Read and decode the next message and work out which cells to emit
+//! Take over the message's grid and work out which cells the query wants. Depends only on the grid, so the selection is
+//! kept while consecutive messages share one.
+void SelectCells(const Grib2ReadBindData &bind_data, Grib2ReadGlobalState &state, Grib2Grid &grib_grid) {
+	const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
+	state.alternative_rows = grib_grid.spec.alternative_rows;
+	const bool same_grid = state.selection_spec && *state.selection_spec == grib_grid.spec;
+	state.grid = std::move(grib_grid.grid);
+	if (!same_grid) {
+		state.selection_spec = grib_grid.spec;
+		state.point_hits.clear();
+		state.box_cells.clear();
+		if (bind_data.mode == SpatialMode::POINTS) {
+			for (idx_t p = 0; p < bind_data.points.size(); p++) {
+				GridCell cell;
+				if (state.grid->NearestCell(bind_data.points[p].lat, bind_data.points[p].lon, cell)) {
+					state.point_hits.push_back({p, cell});
+				}
+			}
+		} else if (bind_data.mode == SpatialMode::BBOX) {
+			state.grid->CellsInBox(bind_data.bbox[0], bind_data.bbox[1], bind_data.bbox[2], bind_data.bbox[3],
+			                       state.box_cells);
+		}
+	}
+	switch (bind_data.mode) {
+	case SpatialMode::POINTS:
+		state.cell_count = state.point_hits.size();
+		break;
+	case SpatialMode::BBOX:
+		state.cell_count = state.box_cells.size();
+		break;
+	default:
+		state.cell_count = static_cast<idx_t>(cell_total);
+		break;
+	}
+	state.cell_position = 0;
+}
+
 void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Grib2ReadGlobalState &state) {
 	const char *function = "read_grib2";
 	const Grib2IndexRow &row = state.messages[state.message_position];
@@ -517,54 +554,30 @@ void LoadMessage(ClientContext &context, const Grib2ReadBindData &bind_data, Gri
 		}
 		Grib2Grid grib_grid;
 		{
-			// Only the ecCodes work is inside the guard: not the file read above or the cell selection below
+			// The ecCodes work and the cell selection (cheap, and kept while messages share a grid) are inside the
+			// guard; the file read above is not
 			const Grib2EccodesGuard ecc_guard;
 			CodesHandlePtr handle = OpenGribMessage(function, bytes.data(), bytes.size());
 			codes_handle *h = handle.get();
 
 			grib_grid = MakeGrid(h, function);
-			state.field = DecodeValues(h, function, grib_grid.grid->Ni() * grib_grid.grid->Nj());
+			const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
 			state.short_names[state.message_position] = Grib2OptionalString(h, "shortName");
 			const bool run_time = Grib2ReferenceTimeIsRunTime(h);
 			state.reference_is_run_time[state.message_position] = run_time;
 			if (run_time) {
 				state.message_valid_times[state.message_position] = Grib2ValidTimeMicros(h);
 			}
-		}
-		const int64_t cell_total = grib_grid.grid->Ni() * grib_grid.grid->Nj();
-		state.alternative_rows = grib_grid.spec.alternative_rows;
-
-		// Cell selection depends only on the grid, so keep it while messages share one
-		const bool same_grid = state.selection_spec && *state.selection_spec == grib_grid.spec;
-		state.grid = std::move(grib_grid.grid);
-		if (!same_grid) {
-			state.selection_spec = grib_grid.spec;
-			state.point_hits.clear();
-			state.box_cells.clear();
-			if (bind_data.mode == SpatialMode::POINTS) {
-				for (idx_t p = 0; p < bind_data.points.size(); p++) {
-					GridCell cell;
-					if (state.grid->NearestCell(bind_data.points[p].lat, bind_data.points[p].lon, cell)) {
-						state.point_hits.push_back({p, cell});
-					}
-				}
-			} else if (bind_data.mode == SpatialMode::BBOX) {
-				state.grid->CellsInBox(bind_data.bbox[0], bind_data.bbox[1], bind_data.bbox[2], bind_data.bbox[3],
-				                       state.box_cells);
+			SelectCells(bind_data, state, grib_grid);
+			// Decoding is the expensive step. A message with no selected cell (every query point outside its grid, or a
+			// box that misses it) has no use for the values, so skip it. ScreenMessage has already checked the
+			// message's layout; only ecCodes' own decode of values nobody asked for is skipped.
+			if (state.cell_count > 0) {
+				state.field = DecodeValues(h, function, cell_total);
+			} else {
+				state.field = DecodedValues();
 			}
 		}
-		switch (bind_data.mode) {
-		case SpatialMode::POINTS:
-			state.cell_count = state.point_hits.size();
-			break;
-		case SpatialMode::BBOX:
-			state.cell_count = state.box_cells.size();
-			break;
-		default:
-			state.cell_count = static_cast<idx_t>(cell_total);
-			break;
-		}
-		state.cell_position = 0;
 		state.loaded = true;
 	} catch (const std::bad_alloc &) {
 		// Not an input problem: a large message or grid did not fit in memory

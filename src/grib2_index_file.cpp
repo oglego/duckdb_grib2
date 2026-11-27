@@ -210,6 +210,12 @@ void IndexFile(FileSystem &fs, const std::string &path, bool use_idx, bool detai
 					                    idx_path + " implies " + std::to_string(entry.byte_length) +
 					                    " (does the .idx belong to this file?)");
 				}
+				// The length can match when the sidecar is from another run of the same file (constant fields and
+				// fixed-size packing give equal lengths), so the reference time has to match as well
+				std::string time_error;
+				if (!CheckIdxReferenceTime(summary, row.reference_time, time_error)) {
+					ThrowBadMessage(path, entry.message_number, entry.byte_offset, time_error);
+				}
 				if (details) {
 					FillFromSections(row, summary, false);
 					FillDetails(row, summary, prefix);

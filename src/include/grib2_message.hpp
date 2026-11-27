@@ -282,6 +282,18 @@ inline bool CheckDataRepresentation(const uint8_t *data, size_t size, const Mess
 			error = "the message holds more than one field (multi-field messages are not supported)";
 			return false;
 		}
+		// One field is sections 5, 6, 7 in that order, with nothing after the data section. ecCodes tolerates other
+		// orders, but a message that is not laid out as the standard says is not one the checks below were written for
+		if (section7) {
+			error = "the message holds more than one field, or sections after its data section (multi-field messages "
+			        "are not "
+			        "supported)";
+			return false;
+		}
+		if ((number == 6 && !section5) || (number == 7 && !section6)) {
+			error = "the data representation, bitmap and data sections are out of order";
+			return false;
+		}
 		if (number == 5 && !section5) {
 			section5 = data + pos;
 			section5_length = length;

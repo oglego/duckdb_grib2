@@ -350,6 +350,42 @@ int main() {
 		Check(!Accepted(repeated, error), "a message that repeats sections 6 and 7 was accepted");
 		Check(error.find("more than one field") != std::string::npos, "unhelpful error for repeated 6 and 7: " + error);
 	}
+	{ // One field is sections 5, 6, 7 in that order with nothing after the data section. ecCodes tolerates other
+	  // orders, but the layout checks were written for the standard one.
+		const std::vector<uint8_t> single = ReadFile("fixtures/hrrr_msg90_csnow_simple_const.grib2");
+		Check(!single.empty(), "cannot read the single-field source message");
+		auto section_length = [&](size_t at) {
+			return (static_cast<size_t>(single[at]) << 24) | (static_cast<size_t>(single[at + 1]) << 16) |
+			       (static_cast<size_t>(single[at + 2]) << 8) | static_cast<size_t>(single[at + 3]);
+		};
+		auto set_total_length = [](std::vector<uint8_t> &message) {
+			for (int b = 0; b < 8; b++) {
+				message[8 + b] = static_cast<uint8_t>(static_cast<uint64_t>(message.size()) >> (8 * (7 - b)));
+			}
+		};
+		const size_t s4 = FindSection(single, 4);
+		const size_t s6 = FindSection(single, 6);
+		const size_t s7 = FindSection(single, 7);
+		// 5, 7, 6, 7: a data section before the bitmap section it belongs after
+		std::vector<uint8_t> reordered(single.begin(), single.begin() + s6);
+		reordered.insert(reordered.end(), single.begin() + s7, single.end() - 4);
+		reordered.insert(reordered.end(), single.begin() + s6, single.begin() + s6 + section_length(s6));
+		reordered.insert(reordered.end(), single.begin() + s7, single.end() - 4);
+		reordered.insert(reordered.end(), {'7', '7', '7', '7'});
+		set_total_length(reordered);
+		std::string error;
+		Check(!Accepted(reordered, error), "a message with its data section before its bitmap section was accepted");
+		Check(error.find("out of order") != std::string::npos, "unhelpful error for out-of-order sections: " + error);
+		// A product definition section after the data section
+		std::vector<uint8_t> trailing(single.begin(), single.end() - 4);
+		trailing.insert(trailing.end(), single.begin() + s4, single.begin() + s4 + section_length(s4));
+		trailing.insert(trailing.end(), {'7', '7', '7', '7'});
+		set_total_length(trailing);
+		error.clear();
+		Check(!Accepted(trailing, error), "a message with a section after its data section was accepted");
+		Check(error.find("after its data section") != std::string::npos,
+		      "unhelpful error for a section after the data section: " + error);
+	}
 	{ // Only bitmap indicators 0 (explicit bitmap) and 255 (no bitmap) describe a complete single field. 254 (reuse)
 	  // and 1-253 (predefined) are ignored by ecCodes, which would then return unmasked values.
 		const std::vector<uint8_t> none = ReadFile("fixtures/hrrr_msg90_csnow_simple_const.grib2");

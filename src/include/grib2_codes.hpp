@@ -103,8 +103,19 @@ inline CodesHandlePtr OpenGribMessage(const char *function, const char *data, id
 	if (!ScreenMessage(reinterpret_cast<const uint8_t *>(data), static_cast<size_t>(size), screen_error)) {
 		throw InvalidInputException(std::string(function) + ": " + screen_error);
 	}
+	// ecCodes gets exactly the first message: the buffer may hold more (a file read into one BLOB), and what was
+	// screened must be what ecCodes sees. The screen has already shown the indicator's length fits in `size`.
+	MessageSummary indicator;
+	size_t needed = 0;
+	std::string indicator_error;
+	if (ParseIndicator(reinterpret_cast<const uint8_t *>(data), static_cast<size_t>(size), indicator, needed,
+	                   indicator_error) != SectionParseResult::OK ||
+	    indicator.total_length > static_cast<uint64_t>(size)) {
+		throw InvalidInputException(std::string(function) + ": input is not a valid GRIB message");
+	}
 	// The _copy variant makes ecCodes own its buffer, so the DuckDB vector data can be released safely.
-	CodesHandlePtr handle(codes_handle_new_from_message_copy(nullptr, data, static_cast<size_t>(size)));
+	CodesHandlePtr handle(
+	    codes_handle_new_from_message_copy(nullptr, data, static_cast<size_t>(indicator.total_length)));
 	if (!handle) {
 		throw InvalidInputException(std::string(function) + ": input is not a valid GRIB message");
 	}

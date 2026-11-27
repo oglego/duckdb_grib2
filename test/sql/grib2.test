@@ -1290,3 +1290,32 @@ query I
 SELECT strftime(reference_time, '%Y-%m-%d %H:%M') FROM grib2_index('test/data/wrong_reference_time.grib2', idx := false);
 ----
 2026-06-02 00:00
+
+# One field is sections 5, 6, 7 in that order. ecCodes decodes a message laid out 5, 7, 6, 7, but the layout checks were
+# written for the standard order, so it is refused (test/data/generate_section_order_sample.py).
+statement error
+SELECT * FROM read_grib2('test/data/sections_out_of_order.grib2', all_cells := true);
+----
+out of order
+
+# A buffer holding more than one message: the scalar functions use the first and ecCodes is given only that message
+query I
+SELECT grib2_message_info(a.content || a.content) = grib2_message_info(a.content) FROM read_blob('fixtures/nbm_msg.grib2') a;
+----
+true
+
+query I
+SELECT grib2_point_value(a.content || a.content, 37.2090, -93.2923) = grib2_point_value(a.content, 37.2090, -93.2923) FROM read_blob('fixtures/nbm_msg.grib2') a;
+----
+true
+
+# A query that selects no cell of a message returns no rows (the message's values are not decoded)
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', points := [{'lat': -60.0, 'lon': 10.0}]);
+----
+0
+
+query I
+SELECT count(*) FROM read_grib2('fixtures/nbm_msg.grib2', bbox := [10, -60, 20, -50]);
+----
+0

@@ -49,7 +49,7 @@ Other message-level rules:
 
 | Rule | Status |
 |---|---|
-| One field per message | ✅ (multi-field messages are refused) |
+| One field per message | ✅ (multi-field messages are refused, as is a message whose sections 5, 6, 7 are out of order or followed by another section) |
 | No bitmap (indicator 255) or an explicit bitmap (indicator 0) | ✅ |
 | Reuse-previous or predefined bitmaps (indicators 1 to 254) | 🔒 refused: nothing in a one-field message for them to refer to |
 | Complex-packed group lengths that do not add up to the value count | 🔒 refused as corrupt |
